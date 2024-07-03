@@ -1681,11 +1681,15 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
                                          ["TubeCode", "RackID"])
 
         # Populate plate map
-        plate_map["Project Name"] = idx["Project Name"]
+        # NB: these two are now *per sample* values
+        # plate_map["Project Name"] = idx["Project Name"]
+        # plate_map["Project Abbreviation"] = idx["Project Abbreviation"]
         plate_map["Plate Position"] = idx["Plate Position"]
-        plate_map["Project Abbreviation"] = idx["Project Abbreviation"]
         plate_map["vol_extracted_elution_ul"] = idx["Plate elution volume"]
-        if "Project Plate" in idx:
+        # NB: for new notebooks where Project Name is per sample, the user is
+        # responsible for putting in the full plat name and the below
+        # code won't be run; it remains here for legacy notebooks
+        if "Project Plate" in idx and "Project Name" in idx:
             # If yes, use "Project Plate" to construct the value for
             # "Project Plate" in plate_map
             plate_map["Project Plate"] = \
@@ -1709,8 +1713,13 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
         compressed_plate_df = pd.concat([compressed_plate_df, plate_map])
 
     # Merging sample accession
+    sample_merge_cols = ["TubeCode", "sample_name"]
+    for a_project_col in ["Project Name", "Project Abbreviation"]:
+        if a_project_col not in compressed_plate_df.columns:
+            sample_merge_cols.append(a_project_col)
+
     compressed_plate_df_merged = compressed_plate_df.merge(
-        sample_accession_df[["sample_name", "TubeCode"]],
+        sample_accession_df[sample_merge_cols],
         on="TubeCode", how="left")
 
     # Renaming columns for legacy
@@ -1724,22 +1733,40 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
         inplace=True,
     )
 
-    # Assign COMPRESSED PLATE NAME BASED OFF PROJECT PLATE
-    col = "Project Plate"
-    compressed_plate_df_merged["Compressed Plate Name"] = (
-        compressed_plate_df_merged[col].str.rsplit("_", n=1).str[-1]
+    # Split the "Project Plate" column on "_" and take everything EXCEPT the
+    # last element
+    source_col = "Project Plate"
+    temp_name_base_col = "plate_name_base"
+    compressed_plate_name_col = "Compressed Plate Name"
+    compressed_plate_df_merged[temp_name_base_col] = (
+        compressed_plate_df_merged[source_col].str.rsplit("_", n=1).str[0]
     )
 
-    # Concatenate the values with "_" separating each value
-    unique_project_plate = "_".join(
-        compressed_plate_df_merged["Compressed Plate Name"].unique()
-    )
-    unique_project_name = "_".join(
-        compressed_plate_df_merged["Project Name"].unique())
+    # get the unique "plate_name_base" values
+    unique_plate_name_bases = \
+        compressed_plate_df_merged[temp_name_base_col].unique()
+    if len(unique_plate_name_bases) == 1:
+        # now get just the last element of the Project Plate split--the plate #
+        # and *temporarily* assign it to the compressed_plate_name_col column
+        compressed_plate_df_merged[compressed_plate_name_col] = (
+            compressed_plate_df_merged[source_col].str.rsplit("_", n=1).str[-1]
+        )
 
-    compressed_plate_df_merged["Compressed Plate Name"] = (
-        unique_project_name + "_" + unique_project_plate
-    )
+        # Concatenate the plate number values with "_" separating each value
+        unique_project_plates_str = "_".join(
+            compressed_plate_df_merged[compressed_plate_name_col].unique())
+
+        compressed_plate_name = \
+                unique_plate_name_bases[0] + "_" + unique_project_plates_str
+    # otherwise, if all the plates DON'T have the same base name, then
+    # don't try to be clever and just concatenate the 4 input plate names
+    else:
+        unique_plate_names = compressed_plate_df_merged[source_col].unique()
+        compressed_plate_name = "_".join(unique_plate_names)
+    # endif len(unique_plate_name_bases) == 1
+
+    compressed_plate_df_merged[compressed_plate_name_col] = \
+        compressed_plate_name
 
     # Arrange plate_df so sample col is first
     diff = compressed_plate_df_merged.columns.difference(["Sample"])
