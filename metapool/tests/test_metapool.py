@@ -95,7 +95,7 @@ class Tests(TestCase):
         with self.assertRaises(ValueError):
             read_visionmate_file(self.plate_error_fp, ['TubeCode'])
 
-    def test_compress_plates(self):
+    def test_compress_plates_legacy_plate_defines_project(self):
         compression = [
             # top left plate
             {'Plate Position': 1,  # as int
@@ -126,6 +126,119 @@ class Tests(TestCase):
         ]
 
         plate_df_obs = compress_plates(compression, self.sa_df,
+                                       well_col='Well')
+        plate_df_exp = pd.read_csv(self.comp_plate_exp_fp,
+                                   dtype={'TubeCode': str}, sep='\t')
+
+        pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)
+
+    def test_compress_plates_all_same_project(self):
+        # this should give same results as
+        # test_compress_plates_legacy_plate_defines_project, but via
+        # different logic
+        compression = [
+            # top left plate
+            {'Plate Position': 1,  # as int
+             'Plate map file': self.plates[0],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_16',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            # top right plate
+            {'Plate Position': 2,
+             'Plate map file': self.plates[1],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_17',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            {'Plate Position': 3,
+             'Plate map file': self.plates[2],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_18',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            {'Plate Position': 4,
+             'Plate map file': self.plates[3],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_21',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70}
+        ]
+
+        augmented_sa_df = self.sa_df.copy()
+        augmented_sa_df['Project Name'] = 'Celeste_Adaptation_12986'
+        augmented_sa_df['Project Abbreviation'] = 'ADAPT'
+
+        plate_df_obs = compress_plates(compression, augmented_sa_df,
+                                       well_col='Well')
+        plate_df_exp = pd.read_csv(self.comp_plate_exp_fp,
+                                   dtype={'TubeCode': str}, sep='\t')
+
+        pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)
+
+    def test_compress_plates_multiple_projects(self):
+        compression = [
+            # top left plate
+            {'Plate Position': 1,  # as int
+             'Plate map file': self.plates[0],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_16',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            # top right plate
+            {'Plate Position': 2,
+             'Plate map file': self.plates[1],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_17',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            {'Plate Position': 3,
+             'Plate map file': self.plates[2],
+             'Project Plate': 'Celeste_Adaptation_12986_Plate_18',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            {'Plate Position': 4,
+             'Plate map file': self.plates[3],
+             'Project Plate': 'TMI_plus_10317_Plate_42',
+             'Project Name': 'TMI_12986',
+             'Project Abbreviation': 'TMI',
+             'Plate elution volume': 70}
+        ]
+
+        # modify the basic sa_df to have different projects
+        augmented_sa_df = self.sa_df.copy()
+        # first three plates are part of the same project; start by pretending
+        # everything is ...
+        augmented_sa_df['Project Name'] = 'Celeste_Adaptation_12986'
+        augmented_sa_df['Project Abbreviation'] = 'ADAPT'
+
+        # get the plate map for the last plate as a dataframe
+        plate_4_map_df = pd.read_csv(self.plates[3], sep='\t',
+                                     dtype={'TubeCode': str})
+        # get the TubeCode values for the first 10 records in plate_4_map_df
+        tmi_tube_codes = plate_4_map_df['TubeCode'].head(10).values
+        # get augmented_sa_df mask for records with TubeCode values
+        # in tmi_tube_codes
+        tmi_samples_mask = augmented_sa_df['TubeCode'].isin(tmi_tube_codes)
+        # set the Project Name and Project Abbreviation for the TMI samples
+        augmented_sa_df.loc[tmi_samples_mask, 'Project Name'] = 'TMI_10317'
+        augmented_sa_df.loc[tmi_samples_mask, 'Project Abbreviation'] = 'TMI'
+
+        # get all the TubeCode values in plate_4_map_df EXCEPT
+        # those in tmi_tube_codes
+        side_proj_tube_codes = plate_4_map_df['TubeCode'].loc[
+            ~plate_4_map_df['TubeCode'].isin(tmi_tube_codes)].values
+        # get augmented_sa_df mask for records with TubeCode values
+        # in side_proj_tube_codes
+        side_proj_samples_mask = augmented_sa_df['TubeCode'].isin(side_proj_tube_codes)
+        # set Project Name & Project Abbreviation for the side project samples
+        augmented_sa_df.loc[side_proj_samples_mask, 'Project Name'] = \
+            'Side_Project_12345'
+        augmented_sa_df.loc[side_proj_samples_mask, 'Project Abbreviation'] = \
+            'SIDE'
+
+        plate_df_obs = compress_plates(compression, augmented_sa_df,
                                        well_col='Well')
         plate_df_exp = pd.read_csv(self.comp_plate_exp_fp,
                                    dtype={'TubeCode': str}, sep='\t')
