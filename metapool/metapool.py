@@ -746,7 +746,7 @@ def compute_qpcr_concentration(cp_vals, m=-3.231, b=12.059, dil_factor=25000):
         The dilution factor of the samples going into the qPCR
 
     Returns
-    -------10
+    -------
     np.array of floats
         A 2D array of floats
     """
