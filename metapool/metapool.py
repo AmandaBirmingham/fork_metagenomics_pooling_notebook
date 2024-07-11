@@ -939,7 +939,7 @@ def estimate_pool_conc_vol(sample_vols, sample_concs):
 
 
 def format_pooling_echo_pick_list(
-    vol_sample, max_vol_per_well=60000, dest_plate_shape=[16, 24]
+    vol_sample, max_vol_per_well=60000, dest_plate_shape=None
 ):
     """Format the contents of an echo pooling pick list
 
@@ -950,6 +950,9 @@ def format_pooling_echo_pick_list(
     max_vol_per_well : 2d numpy array of floats
         Maximum destination well volume, in nL
     """
+    if dest_plate_shape is None:
+        dest_plate_shape = [16, 24]
+
     contents = [
         "Source Plate Name,Source Plate Type,Source Well,"
         "Concentration,Transfer Volume,Destination Plate Name,"
