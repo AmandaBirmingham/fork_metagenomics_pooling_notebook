@@ -71,6 +71,10 @@ class Tests(TestCase):
         self.comp_plate_exp_fp = os.path.join(
             path,
             'data/compress_plates_expected_out.tsv')
+        self.comp_plate_multi_proj_on_plate_exp_fp = os.path.join(
+            path,
+            'data/compress_plates_multiple_projects_on_one_plate_'
+            'expected_out.tsv')
         self.add_controls_exp_fp = os.path.join(
             path,
             'data/add_controls_expected_out.tsv')
@@ -140,26 +144,26 @@ class Tests(TestCase):
             # top left plate
             {'Plate Position': 1,  # as int
              'Plate map file': self.plates[0],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_16',
+             'Project Plate': 'Plate_16',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             # top right plate
             {'Plate Position': 2,
              'Plate map file': self.plates[1],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_17',
+             'Project Plate': 'Plate_17',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             {'Plate Position': 3,
              'Plate map file': self.plates[2],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_18',
+             'Project Plate': 'Plate_18',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             {'Plate Position': 4,
              'Plate map file': self.plates[3],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_21',
+             'Project Plate': 'Plate_21',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70}
@@ -177,31 +181,36 @@ class Tests(TestCase):
         pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)
 
     def test_compress_plates_multiple_projects(self):
+        # project name for *samples* now comes from sample accession rather
+        # than the compression dict, to allow for multiple projects on the same
+        # 96-well plate.  However, project name for *blanks* still comes from
+        # the compression dict, set to the "main" project of the 96-well plate.
+
         compression = [
             # top left plate
             {'Plate Position': 1,  # as int
              'Plate map file': self.plates[0],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_16',
+             'Project Plate': 'Plate_16',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             # top right plate
             {'Plate Position': 2,
              'Plate map file': self.plates[1],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_17',
+             'Project Plate': 'Plate_17',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             {'Plate Position': 3,
              'Plate map file': self.plates[2],
-             'Project Plate': 'Celeste_Adaptation_12986_Plate_18',
+             'Project Plate': 'Plate_18',
              'Project Name': 'Celeste_Adaptation_12986',
              'Project Abbreviation': 'ADAPT',
              'Plate elution volume': 70},
             {'Plate Position': 4,
              'Plate map file': self.plates[3],
-             'Project Plate': 'TMI_plus_10317_Plate_42',
-             'Project Name': 'TMI_12986',
+             'Project Plate': 'Plate_42',
+             'Project Name': 'TMI_10317',
              'Project Abbreviation': 'TMI',
              'Plate elution volume': 70}
         ]
@@ -231,7 +240,8 @@ class Tests(TestCase):
             ~plate_4_map_df['TubeCode'].isin(tmi_tube_codes)].values
         # get augmented_sa_df mask for records with TubeCode values
         # in side_proj_tube_codes
-        side_proj_samples_mask = augmented_sa_df['TubeCode'].isin(side_proj_tube_codes)
+        side_proj_samples_mask = augmented_sa_df['TubeCode'].isin(
+            side_proj_tube_codes)
         # set Project Name & Project Abbreviation for the side project samples
         augmented_sa_df.loc[side_proj_samples_mask, 'Project Name'] = \
             'Side_Project_12345'
@@ -240,7 +250,7 @@ class Tests(TestCase):
 
         plate_df_obs = compress_plates(compression, augmented_sa_df,
                                        well_col='Well')
-        plate_df_exp = pd.read_csv(self.comp_plate_exp_fp,
+        plate_df_exp = pd.read_csv(self.comp_plate_multi_proj_on_plate_exp_fp,
                                    dtype={'TubeCode': str}, sep='\t')
 
         pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)

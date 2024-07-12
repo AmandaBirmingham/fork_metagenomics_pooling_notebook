@@ -1688,9 +1688,6 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
         plate_map["Project Abbreviation"] = idx["Project Abbreviation"]
         plate_map["Plate Position"] = idx["Plate Position"]
         plate_map["vol_extracted_elution_ul"] = idx["Plate elution volume"]
-        # NB: for new notebooks where Project Name is per sample, the user is
-        # responsible for putting in the full plate name and the below
-        # code won't be run; it remains here for legacy notebooks
         if "Project Plate" in idx:
             plate_map["Project Plate"] = \
                 f"{idx['Project Name']}_{idx['Project Plate']}"
@@ -1714,17 +1711,17 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
 
     # Merging sample accession
     sample_merge_cols = ["TubeCode", "sample_name"]
-    for a_project_col in ["Project Name"]:
+    if "Project Name" in sample_accession_df.columns:
         sample_merge_cols.append("Project Name")
 
-    # compressed_plate_df_merged = compressed_plate_df.merge(
-    #     sample_accession_df[sample_merge_cols],
-    #     on="TubeCode", how="left")
     compressed_plate_df_merged = compressed_plate_df.copy()
+    compressed_plate_df_merged.reset_index(drop=True, inplace=True)
     # make a df where the only non-nan values in non-TubeCode columns are for
     # the TubeCodes that have values in the sample_accession_df
     temp_merged_df = compressed_plate_df_merged[["TubeCode"]].merge(
         sample_accession_df[sample_merge_cols], on="TubeCode", how="left")
+    # update won't ADD new columns from the right df, so we need a placeholder
+    compressed_plate_df_merged['sample_name'] = pd.NA
     compressed_plate_df_merged.update(temp_merged_df)
 
     # Renaming columns for legacy
