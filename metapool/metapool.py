@@ -1720,8 +1720,11 @@ def compress_plates(compression_layout, sample_accession_df, well_col="Well"):
     # the TubeCodes that have values in the sample_accession_df
     temp_merged_df = compressed_plate_df_merged[["TubeCode"]].merge(
         sample_accession_df[sample_merge_cols], on="TubeCode", how="left")
-    # update won't ADD new columns from the right df, so we need a placeholder
-    compressed_plate_df_merged['sample_name'] = pd.NA
+    # update won't ADD new columns from the right df, so we need a placeholder,
+    # and that placeholder needs to be a type that can be nan
+    compressed_plate_df_merged['sample_name'] = np.nan
+    compressed_plate_df_merged['sample_name'] = \
+        compressed_plate_df_merged['sample_name'].astype('object')
     compressed_plate_df_merged.update(temp_merged_df)
 
     # Renaming columns for legacy
@@ -1944,7 +1947,7 @@ def add_controls(plate_df, blanks_dir, katharoseq_dir=None):
 def validate_plate_df(
     plate_df, metadata, sample_accession_df, blanks_dir, katharoseq_dir=None
 ):
-    """ "Function checks that all the samples names recorded in the plate_df
+    """ Function checks that all the samples names recorded in the plate_df
     have metadata associated with them. It also checks that all the matrix
     tubes in the plate_df are indeed located in the sample accesion file or
     controls lists.Checks for duplicate sample names and makes sure the

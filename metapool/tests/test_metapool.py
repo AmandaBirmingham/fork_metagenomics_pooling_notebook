@@ -60,6 +60,7 @@ class Tests(TestCase):
         metadata_fp = os.path.join(path, 'data/metadata_for_test.txt')
 
         sa_fp = os.path.join(path, 'data/sa_file.tsv')
+        augmented_sa_fp = os.path.join(path, 'data/sa_file_augmented.tsv')
         p1 = os.path.join(path, 'data/plate_map1.tsv')
         p2 = os.path.join(path, 'data/plate_map2.tsv')
         p3 = os.path.join(path, 'data/plate_map3.tsv')
@@ -89,6 +90,8 @@ class Tests(TestCase):
         self.blanks = pd.read_csv(blanks_fp, sep='\t')
         self.sa_df = pd.read_csv(sa_fp, sep='\t',
                                  dtype={'TubeCode': str})
+        self.sa_augmented_df = pd.read_csv(augmented_sa_fp, sep='\t',
+                                           dtype={'TubeCode': str})
         self.metadata = pd.read_csv(metadata_fp, sep='\t')
         self.fp = path
         self.plates = [p1, p2, p3, p4]
@@ -215,40 +218,7 @@ class Tests(TestCase):
              'Plate elution volume': 70}
         ]
 
-        # modify the basic sa_df to have different projects
-        augmented_sa_df = self.sa_df.copy()
-        # first three plates are part of the same project; start by pretending
-        # everything is ...
-        augmented_sa_df['Project Name'] = 'Celeste_Adaptation_12986'
-        augmented_sa_df['Project Abbreviation'] = 'ADAPT'
-
-        # get the plate map for the last plate as a dataframe
-        plate_4_map_df = pd.read_csv(self.plates[3], sep='\t',
-                                     dtype={'TubeCode': str})
-        # get the TubeCode values for the first 10 records in plate_4_map_df
-        tmi_tube_codes = plate_4_map_df['TubeCode'].head(10).values
-        # get augmented_sa_df mask for records with TubeCode values
-        # in tmi_tube_codes
-        tmi_samples_mask = augmented_sa_df['TubeCode'].isin(tmi_tube_codes)
-        # set the Project Name and Project Abbreviation for the TMI samples
-        augmented_sa_df.loc[tmi_samples_mask, 'Project Name'] = 'TMI_10317'
-        augmented_sa_df.loc[tmi_samples_mask, 'Project Abbreviation'] = 'TMI'
-
-        # get all the TubeCode values in plate_4_map_df EXCEPT
-        # those in tmi_tube_codes
-        side_proj_tube_codes = plate_4_map_df['TubeCode'].loc[
-            ~plate_4_map_df['TubeCode'].isin(tmi_tube_codes)].values
-        # get augmented_sa_df mask for records with TubeCode values
-        # in side_proj_tube_codes
-        side_proj_samples_mask = augmented_sa_df['TubeCode'].isin(
-            side_proj_tube_codes)
-        # set Project Name & Project Abbreviation for the side project samples
-        augmented_sa_df.loc[side_proj_samples_mask, 'Project Name'] = \
-            'Side_Project_12345'
-        augmented_sa_df.loc[side_proj_samples_mask, 'Project Abbreviation'] = \
-            'SIDE'
-
-        plate_df_obs = compress_plates(compression, augmented_sa_df,
+        plate_df_obs = compress_plates(compression, self.sa_augmented_df,
                                        well_col='Well')
         plate_df_exp = pd.read_csv(self.comp_plate_multi_proj_on_plate_exp_fp,
                                    dtype={'TubeCode': str}, sep='\t')
