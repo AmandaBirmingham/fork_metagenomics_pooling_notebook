@@ -1,26 +1,19 @@
 import os
 import pandas as pd
 
-G_SAMPLE_NAME = 'sample_name'
-G_TUBE_CODE = 'TubeCode'
-G_TUBE_ID = 'tube_id'
-G_SEP = "\t"
-G_SAMPLE_PROJECT_KEY = "Sample_Project"
-G_SAMPLE_KEY = "Sample"
-G_SAMPLE_NAME_KEY = "Sample_Name"
-G_SAMPLE_PLATE_KEY = "Sample_Plate"
-G_PROJECT_PLATE_KEY = "Project Plate"
-G_ALL_PROJECTS_ON_PLATE_KEY = "AllProjectsOnPlate"
-G_SAMPLE_TYPE_KEY = "Sample_Type"
-G_PRIMARY_STUDY_KEY = "PrimaryQiitaStudy"
-G_SECONDARY_STUDIES_KEY = "SecondaryQiitaStudies"
-G_SAMPLE_CONTEXT_KEY = "SampleContext"
-G_BLANK_ROOT = "BLANK"
-G_BLANK_SAMPLE_TYPE = "control blank"
-G_STUDY_ID_DELIMITER = ";"
-G_QIITA_STUDY_ID = 'qiita_study_id'
-G_PROJECT_NAME = 'Project Name'
-G_PROJECT_ABBREV = 'Project Abbreviation'
+QIITA_SAMPLE_NAME_KEY = 'sample_name'
+TAB_SEP = "\t"
+SAMPLE_KEY = "Sample"
+SAMPLE_NAME_KEY = "Sample Name"
+PROJECT_PLATE_KEY = "Project Plate"
+SAMPLE_TYPE_KEY = "Sample Type"
+PRIMARY_STUDY_KEY = "Primary Qiita Study"
+SECONDARY_STUDIES_KEY = "Secondary Qiita Studies"
+BLANK_ROOT = "BLANK"
+BLANK_SAMPLE_TYPE = "control blank"
+STUDY_ID_DELIMITER = ";"
+QIITA_STUDY_ID = 'qiita_study_id'
+PROJECT_ABBREV_KEY = 'Project Abbreviation'
 
 EXPERIMENT_NAME_KEY = 'Experiment Name'
 BIOINFO_KEY = 'Bioinformatics'
@@ -40,7 +33,7 @@ def get_studies_attr_list(studies_dict, desired_key):
 
 def join_dfs_from_files(input_fps, req_cols_to_extract,
                         opt_cols_to_extract=None, unique_cols=None,
-                        dtype=None, sep=G_SEP):
+                        dtype=None, sep=TAB_SEP):
     if opt_cols_to_extract is None:
         opt_cols_to_extract = []
 
@@ -107,19 +100,19 @@ def extend_sample_accession_df(sample_accession_df, studies_info, metadata_df):
     # extract qiita study ids from the Project Name in studies_info entries
     local_studies_info = studies_info.copy()
     for curr_study in local_studies_info:
-        curr_project_name = curr_study[G_PROJECT_NAME]
+        curr_project_name = curr_study[PROJECT_NAME_KEY]
         curr_qiita_id = _get_qiita_id_from_sample_project(curr_project_name)
-        curr_study[G_QIITA_STUDY_ID] = curr_qiita_id
+        curr_study[QIITA_STUDY_ID] = curr_qiita_id
     studies_df = pd.DataFrame(local_studies_info)
 
     # check for qiita_study_ids in studies_df that aren't in the metadata_df
-    _check_for_missing_df_ids(studies_df, metadata_df, G_QIITA_STUDY_ID,
+    _check_for_missing_df_ids(studies_df, metadata_df, QIITA_STUDY_ID,
                               'studies', 'metadata')
     # merge the metadata_df with the studies_df on the qiita_study_id
-    metadata_plus_df = pd.merge(metadata_df, studies_df, on=G_QIITA_STUDY_ID)
+    metadata_plus_df = pd.merge(metadata_df, studies_df, on=QIITA_STUDY_ID)
     # pull the qiita study id off the sample name
-    metadata_plus_df[G_SAMPLE_NAME] = metadata_plus_df.apply(
-        lambda x: x[G_SAMPLE_NAME].replace(f"{x[G_QIITA_STUDY_ID]}.", ""),
+    metadata_plus_df[QIITA_SAMPLE_NAME_KEY] = metadata_plus_df.apply(
+        lambda x: x[QIITA_SAMPLE_NAME_KEY].replace(f"{x[QIITA_STUDY_ID]}.", ""),
         axis=1
     )
 
@@ -128,16 +121,16 @@ def extend_sample_accession_df(sample_accession_df, studies_info, metadata_df):
     # AFAICT, it is used for 16S, to name blanks and katharoseq controls ...
     # in that case it should really be called Plate Abbreviation if more than
     # one project is allowed on a plate ...
-    extension_cols = [G_SAMPLE_NAME, G_PROJECT_NAME, G_PROJECT_ABBREV]
+    extension_cols = [QIITA_SAMPLE_NAME_KEY, PROJECT_NAME_KEY, PROJECT_ABBREV_KEY]
 
     # now add the project name and abbreviation to the sample_accession_df
     # by merging on the qiita_id.sample_name
     _check_for_missing_df_ids(
-        sample_accession_df, metadata_plus_df, G_SAMPLE_NAME,
+        sample_accession_df, metadata_plus_df, QIITA_SAMPLE_NAME_KEY,
         'sample accession', 'metadata')
     sample_accession_plus_df = pd.merge(
         sample_accession_df, metadata_plus_df[extension_cols],
-        on=G_SAMPLE_NAME)
+        on=QIITA_SAMPLE_NAME_KEY)
     return sample_accession_plus_df
 
 
@@ -146,25 +139,25 @@ def extend_compression_layout_info(compression_layout, studies_info):
     # for each dict in compression_layout
     for curr_plate in extended_compression_layout:
         # get its Project Name
-        curr_project_name = curr_plate[G_PROJECT_NAME]
+        curr_project_name = curr_plate[PROJECT_NAME_KEY]
         # find that Project Name in studies_info
         found_study = None
         for curr_study in studies_info:
-            if curr_study[G_PROJECT_NAME] == curr_project_name:
+            if curr_study[PROJECT_NAME_KEY] == curr_project_name:
                 found_study = curr_study
                 break
         # next study
         # add the Project Abbreviation to the dict
         if found_study is None:
-            raise ValueError(f"{G_PROJECT_NAME} '{curr_project_name}' "
+            raise ValueError(f"{PROJECT_NAME_KEY} '{curr_project_name}' "
                              f"not found in studies_info")
-        curr_plate[G_PROJECT_ABBREV] = found_study[G_PROJECT_ABBREV]
+        curr_plate[PROJECT_ABBREV_KEY] = found_study[PROJECT_ABBREV_KEY]
     # next plate
 
     return extended_compression_layout
 
 
-def generate_sections_dict(plate_df, studies_info, expt_type, expt_name,
+def generate_sections_dict(plate_df, studies_info, expt_name, expt_type,
                            expt_version, bioinfo_section_base):
     sections_dict = {
         EXPERIMENT_NAME_KEY: expt_name,
@@ -235,39 +228,49 @@ def _generate_sample_context(the_plate_df, blanks_mask=None):
     if blanks_mask is None:
         blanks_mask = _get_blanks_mask_by_name_format(the_plate_df)
 
-    # get all the unique Sample_Plate values for the blanks
+    # get all the unique Project Plate values for the blanks
     names_of_plates_w_blanks = \
-        the_plate_df.loc[blanks_mask, G_PROJECT_PLATE_KEY].unique()
+        the_plate_df.loc[blanks_mask, PROJECT_PLATE_KEY].unique()
 
+    # start building the SampleContext object
     blanks_context_df = the_plate_df.loc[
         blanks_mask,
-        [G_SAMPLE_KEY, G_SAMPLE_PROJECT_KEY, G_PROJECT_PLATE_KEY]].copy()
-    blanks_context_df.rename(columns={G_SAMPLE_KEY: G_SAMPLE_NAME_KEY},
+        [SAMPLE_KEY, PROJECT_NAME_KEY, PROJECT_PLATE_KEY]].copy()
+    blanks_context_df.rename(columns={SAMPLE_KEY: SAMPLE_NAME_KEY},
                              inplace=True)
+    blanks_context_df[PRIMARY_STUDY_KEY] = \
+        blanks_context_df.apply(_get_primary_study, axis=1)
+    blanks_context_df[SAMPLE_TYPE_KEY] = BLANK_SAMPLE_TYPE
 
     # for each plate in names_of_plates_w_blanks
-    for curr_plate_w_blanks_name in names_of_plates_w_blanks:
+    for name_of_curr_plate_w_blanks in names_of_plates_w_blanks:
         # note that this mask is for ALL of plate_df, not just blank rows
         curr_plate_mask = \
-            the_plate_df[G_PROJECT_PLATE_KEY] == curr_plate_w_blanks_name
-        # get all the unique Sample_Project values for plate_df rows that have
-        # Sample_Plate value == curr_plate_w_blanks_name
+            the_plate_df[PROJECT_PLATE_KEY] == name_of_curr_plate_w_blanks
+        # get all the unique Project Name values for plate_df rows that have
+        # Project Plate value == name_of_curr_plate_w_blanks
         projects_on_curr_plate = the_plate_df.loc[
-            curr_plate_mask, G_SAMPLE_PROJECT_KEY].unique()
+            curr_plate_mask, PROJECT_NAME_KEY].unique().tolist()
+        # add projects_on_curr_plate to blanks_context_df for
+        # this plate's blanks
         curr_plate_blanks_mask = \
-            blanks_context_df[G_PROJECT_PLATE_KEY] == curr_plate_w_blanks_name
-        blanks_context_df[
-            curr_plate_blanks_mask, G_ALL_PROJECTS_ON_PLATE_KEY] = \
-            projects_on_curr_plate
+            blanks_context_df[PROJECT_PLATE_KEY] == name_of_curr_plate_w_blanks
+
+        # for each row in blanks_context_df that has the current plate name,
+        # remove that row's project name from projects_on_curr_plate list to
+        # generate the list of secondary studies for that blank
+        blanks_context_df.loc[
+            curr_plate_blanks_mask, SECONDARY_STUDIES_KEY] = (
+            blanks_context_df.apply(
+                _get_secondary_studies,
+                all_projects_on_plate=projects_on_curr_plate,
+                axis=1)
+        )
     # next plate name of plate w blanks
 
-    blanks_context_df[G_PRIMARY_STUDY_KEY] = \
-        blanks_context_df.apply(_get_primary_study, axis=1)
-    blanks_context_df[G_SECONDARY_STUDIES_KEY] = \
-        blanks_context_df.apply(_get_secondary_studies, axis=1)
-    blanks_context_df[G_SAMPLE_TYPE_KEY] = G_BLANK_SAMPLE_TYPE
-    # remove the "AllProjectsOnPlate" column
-    blanks_context_df.drop(G_ALL_PROJECTS_ON_PLATE_KEY, axis=1, inplace=True)
+    # clean up by removing the Project Plate and Project Name columns
+    blanks_context_df.drop(columns=[PROJECT_PLATE_KEY, PROJECT_NAME_KEY],
+                           inplace=True)
 
     # turn blanks_context_df into a list of dictionaries
     blanks_context_list = blanks_context_df.to_dict(orient="records")
@@ -275,7 +278,7 @@ def _generate_sample_context(the_plate_df, blanks_mask=None):
 
 
 def _get_blanks_mask_by_name_format(a_plate_df):
-    return a_plate_df[G_SAMPLE_KEY].str.startswith(G_BLANK_ROOT) == True
+    return a_plate_df[SAMPLE_KEY].str.startswith(BLANK_ROOT) == True
 
 
 def _get_qiita_id_from_sample_project(sample_project_str):
@@ -295,23 +298,24 @@ def _check_for_missing_df_ids(subset_df, superset_df, id_col,
 
 
 def _get_primary_study(curr_row):
-    return _get_qiita_id_from_sample_project(curr_row[G_SAMPLE_PROJECT_KEY])
+    return _get_qiita_id_from_sample_project(curr_row[PROJECT_NAME_KEY])
 
 
-def _get_secondary_studies(curr_row):
-    row_project = curr_row[G_SAMPLE_PROJECT_KEY]
+def _get_secondary_studies(curr_row, all_projects_on_plate):
+    row_project = curr_row[PROJECT_NAME_KEY]
 
     # NB: below will error if row_project is not in
     # projects_on_curr_plate; this is as it should be because
     # that situation should never arise and if it does, we need to
     # stop and figure out why
-    all_projects_on_plate = curr_row[G_ALL_PROJECTS_ON_PLATE_KEY]
-    secondary_projects = all_projects_on_plate.remove(row_project)
+    secondary_projects = all_projects_on_plate.copy()
+    secondary_projects.remove(row_project)
+    secondary_projects = sorted(secondary_projects)
 
     # now split each secondary_projects on _ and make a list of the
     # last element of each split
     secondary_qiita_ids = [_get_qiita_id_from_sample_project(x)
                            for x in secondary_projects]
 
-    secondary_qiita_ids_str = G_STUDY_ID_DELIMITER.join(secondary_qiita_ids)
+    secondary_qiita_ids_str = STUDY_ID_DELIMITER.join(secondary_qiita_ids)
     return secondary_qiita_ids_str

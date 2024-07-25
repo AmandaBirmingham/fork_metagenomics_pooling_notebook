@@ -9,6 +9,8 @@ import pandas as pd
 from metapool.metapool import (bcl_scrub_name, sequencer_i5_index,
                                REVCOMP_SEQUENCERS)
 from metapool.plate import ErrorMessage, WarningMessage, PlateReplication
+from metapool.notebook_support import SAMPLE_CONTEXT_KEY, SAMPLE_NAME_KEY, \
+    SAMPLE_TYPE_KEY, PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY
 
 
 _AMPLICON = 'TruSeq HT'
@@ -26,7 +28,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     _ASSAYS = frozenset({_AMPLICON, _METAGENOMIC, _METATRANSCRIPTOMIC})
     _BIOINFORMATICS_AND_CONTACT = {
         'Bioinformatics': None,
-        'Contact': None
+        'Contact': None,
+        SAMPLE_CONTEXT_KEY: None
     }
 
     _CONTACT_COLUMNS = frozenset({
@@ -40,6 +43,10 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     })
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering'})
+
+    _SAMPLE_CONTEXT_COLUMNS = frozenset({ # from notebook_support
+        SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY,
+        PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY})
 
     _HEADER = {
         'IEMFileVersion': '4',
@@ -70,7 +77,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                      **_BIOINFORMATICS_AND_CONTACT}
 
     sections = ('Header', 'Reads', 'Settings', 'Data', 'Bioinformatics',
-                'Contact')
+                'Contact', SAMPLE_CONTEXT_KEY)
 
     data_columns = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'Sample_Well',
                     'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
@@ -129,6 +136,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             Bioinformatics section of the sample sheet.
         Contact: pd.DataFrame
             Contact section of the sample sheet.
+        Sample_Context: pd.DataFrame
+            Sample_Context section of the sample sheet.
         path: str
             File path where the data was parsed from.
         """
@@ -139,6 +148,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         self.Bioinformatics = None
         self.Contact = None
+        self.Sample_Context = None
         self.path = path
 
         if self.path:
@@ -147,9 +157,11 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             # if self.Bioinformatics is successfully populated after parsing
             # file, then convert the boolean parameters from strings to
             # booleans. Ignore any messages returned _normalize_bi_booleans()
-            # becasue we are not validating, just converting datatypes.
+            # because we are not validating, just converting datatypes.
             if self.Bioinformatics is not None:
                 self._normalize_bi_booleans()
+
+            # TODO: do we need to normalize booleans for Sample_Context?
 
     def _parse(self, path):
         section_name = ''
@@ -234,7 +246,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                         section_header = self._process_section_header(line)
                     continue
 
-                elif section_name in {'Bioinformatics', 'Contact'}:
+                elif section_name in \
+                        {'Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY}:
                     if getattr(self, section_name) is not None:
                         # vals beyond the header are empty values so don't add
                         # them
@@ -283,11 +296,13 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             len(self.Bioinformatics.columns)
             if self.Bioinformatics is not None else 0,
             len(self.Contact.columns) if self.Contact is not None else 0,
+            len(self.Sample_Context.columns) if self.Sample_Context is not None
+            else 0,
             2])
 
         # custom Illumina sections will go between header reads
         section_order = (['Header', 'Reads', 'Settings', 'Data',
-                          'Bioinformatics', 'Contact'])
+                          'Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY])
 
         def pad_iterable(iterable, size, padding=''):
             return list(islice(chain(iterable, repeat(padding)), size))
@@ -313,7 +328,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     line = [getattr(sample, k) for k in self.all_sample_keys]
                     writer.writerow(pad_iterable(line, csv_width))
 
-            elif title == 'Bioinformatics' or title == 'Contact':
+            elif title == 'Bioinformatics' or title == 'Contact' \
+                    or title == SAMPLE_CONTEXT_KEY:
                 if section is not None:
                     # these sections are represented as DataFrame objects
                     writer.writerow(pad_iterable(section.columns.tolist(),
@@ -366,7 +382,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                 self.add_sample(sample)
 
             # these two sections are data frames
-            for section in ['Bioinformatics', 'Contact']:
+            for section in ['Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY]:
                 this, that = getattr(self, section), getattr(sheet, section)
 
                 # if both frames are not None then we concatenate the rows.
@@ -652,7 +668,9 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             return msgs
 
         # we track the updated projects as a dictionary so we can propagate
-        # these changes to the Bioinformatics and Contact sections
+        # these changes to the Bioinformatics and Contact sections.
+        # not necessary to update the SAMPLE_CONTEXT_KEY section because it
+        # uses qiita study ids, not project names.
         updated_samples, updated_projects = [], {}
         for sample in self.samples:
             new_sample = bcl_scrub_name(sample.Sample_ID)
@@ -713,6 +731,9 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     'identifier: %s' % ', '.join(sorted(bad_projects))))
 
         # check Sample_project values match across sections
+        # (I don't think that we need to check whether all the projects occur
+        # in the SAMPLE_CONTEXT_KEY section; I don't think it is guaranteed
+        # that every project has blanks associated with it.)
         bfx = set(self.Bioinformatics['Sample_Project'])
         contact = set(self.Contact['Sample_Project'])
         not_shared = projects ^ bfx
@@ -729,6 +750,10 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                               'in the Data and Bioinformatics section in order'
                               ' to be included in the Contact section.') %
                              ', '.join(sorted(contact - projects))))
+
+        # TODO: Hmm, we might need to check whether the qiita study ids
+        #  in the SAMPLE_CONTEXT_KEY section all match up to projects in the
+        #  Bioinformatics section ...
 
         # silently convert boolean values to either True or False and generate
         # messages for all unrecognizable values.
@@ -766,6 +791,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     def _validate_sample_sheet_metadata(self, metadata):
         msgs = []
 
+        # Note that Sample_Context is not required for the sample sheet
         for req in ['Assay', 'Bioinformatics', 'Contact']:
             if req not in metadata:
                 msgs.append(ErrorMessage('%s is a required attribute' % req))
@@ -774,11 +800,21 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         # present, checks for the contents are done in the sample sheet
         # validation routine
         if 'Bioinformatics' in metadata and 'Contact' in metadata:
-            for section in ['Bioinformatics', 'Contact']:
+            for section in ['Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY]:
                 if section == 'Bioinformatics':
                     columns = self._BIOINFORMATICS_COLUMNS
-                else:
+                elif section == 'Contact':
                     columns = self._CONTACT_COLUMNS
+                elif section == SAMPLE_CONTEXT_KEY:
+                    columns = self._SAMPLE_CONTEXT_COLUMNS
+                else:
+                    msgs.append(ErrorMessage('%s is not a valid section' %
+                                             section))
+
+                # not every section is required, so if a section isn't present,
+                # we can skip the following checks.
+                if section not in metadata:
+                    continue
 
                 for i, project in enumerate(metadata[section]):
                     if set(project.keys()) != columns:
@@ -1572,6 +1608,8 @@ def demux_sample_sheet(sheet):
         new_sheet.Contact = sheet.Contact.loc[
             sheet.Contact['Sample_Project'].isin(projects)].reset_index(
             drop=True)
+
+        # TODO: How should the SAMPLE_CONTEXT_KEY section be handled?
 
         # for our purposes here, we want to reindex df so that the index
         # becomes Sample_ID and a new numeric index is created before
