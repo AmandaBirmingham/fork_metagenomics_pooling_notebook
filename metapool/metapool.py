@@ -1212,7 +1212,7 @@ def rc(seq):
 
 def sequencer_i5_index(sequencer, indices):
     if sequencer in REVCOMP_SEQUENCERS:
-        print("%s: i5 barcodes are output as reverse compliments" % sequencer)
+        print("%s: i5 barcodes are output as reverse complements" % sequencer)
         return [rc(x) for x in indices]
     elif sequencer in OTHER_SEQUENCERS:
         print("%s: i5 barcodes are output in standard direction" % sequencer)

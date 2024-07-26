@@ -29,24 +29,18 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     _BIOINFORMATICS_AND_CONTACT = {
         'Bioinformatics': None,
         'Contact': None,
-        SAMPLE_CONTEXT_KEY: None
     }
 
-    _CONTACT_COLUMNS = frozenset({
-        'Sample_Project', 'Email'
-    })
+    _CONTACT_COL_ORDER = ['Sample_Project', 'Email']
+    _CONTACT_COLUMNS = frozenset(_CONTACT_COL_ORDER)
 
-    _BIOINFORMATICS_COLUMNS = frozenset({
+    _BIOINFORMATICS_COL_ORDER = [
         'Sample_Project', 'QiitaID', 'BarcodesAreRC', 'ForwardAdapter',
         'ReverseAdapter', 'HumanFiltering', 'library_construction_protocol',
-        'experiment_design_description'
-    })
+        'experiment_design_description']
+    _BIOINFORMATICS_COLUMNS = frozenset(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering'})
-
-    _SAMPLE_CONTEXT_COLUMNS = frozenset({ # from notebook_support
-        SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY,
-        PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY})
 
     _HEADER = {
         'IEMFileVersion': '4',
@@ -77,7 +71,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                      **_BIOINFORMATICS_AND_CONTACT}
 
     sections = ('Header', 'Reads', 'Settings', 'Data', 'Bioinformatics',
-                'Contact', SAMPLE_CONTEXT_KEY)
+                'Contact')
 
     data_columns = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'Sample_Well',
                     'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
@@ -136,8 +130,6 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             Bioinformatics section of the sample sheet.
         Contact: pd.DataFrame
             Contact section of the sample sheet.
-        Sample_Context: pd.DataFrame
-            Sample_Context section of the sample sheet.
         path: str
             File path where the data was parsed from.
         """
@@ -145,10 +137,13 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         # the data.
         super().__init__()
         self.remapper = None
+        self.COLS_BY_EXTRA_DF_SECTION_NAME = {
+            'Bioinformatics': self._BIOINFORMATICS_COL_ORDER,
+            'Contact': self._CONTACT_COL_ORDER,
+        }
 
         self.Bioinformatics = None
         self.Contact = None
-        self.Sample_Context = None
         self.path = path
 
         if self.path:
@@ -160,8 +155,6 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             # because we are not validating, just converting datatypes.
             if self.Bioinformatics is not None:
                 self._normalize_bi_booleans()
-
-            # TODO: do we need to normalize booleans for Sample_Context?
 
     def _parse(self, path):
         section_name = ''
@@ -246,8 +239,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                         section_header = self._process_section_header(line)
                     continue
 
-                elif section_name in \
-                        {'Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY}:
+                elif section_name in self.COLS_BY_EXTRA_DF_SECTION_NAME.keys():
                     if getattr(self, section_name) is not None:
                         # vals beyond the header are empty values so don't add
                         # them
@@ -290,28 +282,33 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         if not isinstance(blank_lines, int) or blank_lines <= 0:
             raise ValueError('Number of blank lines must be a positive int.')
 
-        writer = csv.writer(handle)
-        csv_width = max([
-            len(self.all_sample_keys),
-            len(self.Bioinformatics.columns)
-            if self.Bioinformatics is not None else 0,
-            len(self.Contact.columns) if self.Contact is not None else 0,
-            len(self.Sample_Context.columns) if self.Sample_Context is not None
-            else 0,
-            2])
+        def _get_section_len(section_name):
+            section_df = getattr(self, section_name)
+            if section_df is not None:
+                return len(section_df.columns)
+            return 0
 
-        # custom Illumina sections will go between header reads
-        section_order = (['Header', 'Reads', 'Settings', 'Data',
-                          'Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY])
+        section_lens = [_get_section_len(x) for x
+                        in self.COLS_BY_EXTRA_DF_SECTION_NAME.keys()]
+        all_lens = [len(self.all_sample_keys)] + section_lens + [2]
+
+        writer = csv.writer(handle)
+        csv_width = max(all_lens)
+
+        # # custom Illumina sections will go between header reads
+        # section_order = (['Header', 'Reads', 'Settings', 'Data',
+        #                   'Bioinformatics', 'Contact'])
 
         def pad_iterable(iterable, size, padding=''):
             return list(islice(chain(iterable, repeat(padding)), size))
 
-        def write_blank_lines(writer, n=blank_lines, width=csv_width):
+        def write_blank_lines(writer, n=blank_lines, width=None):
+            if width is None:
+                width = csv_width
             for i in range(n):
                 writer.writerow(pad_iterable([], width))
 
-        for title in section_order:
+        for title in self.sections:
             writer.writerow(pad_iterable([f'[{title}]'], csv_width))
 
             # Data is not a section in this class
@@ -328,8 +325,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     line = [getattr(sample, k) for k in self.all_sample_keys]
                     writer.writerow(pad_iterable(line, csv_width))
 
-            elif title == 'Bioinformatics' or title == 'Contact' \
-                    or title == SAMPLE_CONTEXT_KEY:
+            elif title in self.COLS_BY_EXTRA_DF_SECTION_NAME.keys():
                 if section is not None:
                     # these sections are represented as DataFrame objects
                     writer.writerow(pad_iterable(section.columns.tolist(),
@@ -381,8 +377,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             for sample in sheet.samples:
                 self.add_sample(sample)
 
-            # these two sections are data frames
-            for section in ['Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY]:
+            # these sections are data frames
+            for section in self.COLS_BY_EXTRA_DF_SECTION_NAME.keys():
                 this, that = getattr(self, section), getattr(sheet, section)
 
                 # if both frames are not None then we concatenate the rows.
@@ -498,8 +494,12 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     self.Header[key] = metadata.get(key,
                                                     self._HEADER[key])
 
-            elif key in self._BIOINFORMATICS_AND_CONTACT:
-                setattr(self, key, pd.DataFrame(metadata[key]))
+            elif key in self.COLS_BY_EXTRA_DF_SECTION_NAME.keys():
+                # order the df columns to match the expected order
+                temp_df = pd.DataFrame(metadata[key])
+                col_order = self.COLS_BY_EXTRA_DF_SECTION_NAME[key]
+                temp_df = temp_df[col_order]
+                setattr(self, key, temp_df)
 
         # Per MacKenzie's request for 16S don't include Investigator Name and
         # Experiment Name
@@ -669,8 +669,9 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         # we track the updated projects as a dictionary so we can propagate
         # these changes to the Bioinformatics and Contact sections.
-        # not necessary to update the SAMPLE_CONTEXT_KEY section because it
-        # uses qiita study ids, not project names.
+        # I think it's not necessary to update the SAMPLE_CONTEXT_KEY section
+        # because it uses qiita study ids, not project names, and qiita
+        # study ids are not scrubbed.
         updated_samples, updated_projects = [], {}
         for sample in self.samples:
             new_sample = bcl_scrub_name(sample.Sample_ID)
@@ -796,25 +797,13 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             if req not in metadata:
                 msgs.append(ErrorMessage('%s is a required attribute' % req))
 
-        # if both sections are found, then check that all the columns are
-        # present, checks for the contents are done in the sample sheet
+        # if both sections are found, then check that all the columns in all
+        # extra dataframe sections are present; note that checks for the
+        # contents (as opposed to mere presence) are done in the sample sheet
         # validation routine
         if 'Bioinformatics' in metadata and 'Contact' in metadata:
-            for section in ['Bioinformatics', 'Contact', SAMPLE_CONTEXT_KEY]:
-                if section == 'Bioinformatics':
-                    columns = self._BIOINFORMATICS_COLUMNS
-                elif section == 'Contact':
-                    columns = self._CONTACT_COLUMNS
-                elif section == SAMPLE_CONTEXT_KEY:
-                    columns = self._SAMPLE_CONTEXT_COLUMNS
-                else:
-                    msgs.append(ErrorMessage('%s is not a valid section' %
-                                             section))
-
-                # not every section is required, so if a section isn't present,
-                # we can skip the following checks.
-                if section not in metadata:
-                    continue
+            for section, cols in self.COLS_BY_EXTRA_DF_SECTION_NAME.items():
+                columns = frozenset(cols)
 
                 for i, project in enumerate(metadata[section]):
                     if set(project.keys()) != columns:
@@ -855,6 +844,66 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         return msgs
 
 
+class KLSampleSheetWithSampleContext(KLSampleSheet):
+    _BIOINFORMATICS_AND_CONTACT = {
+        'Bioinformatics': None,
+        'Contact': None,
+    }
+
+    # from notebook_support
+    _SAMPLE_CONTEXT_COL_ORDER = [SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY,
+                                 PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY]
+
+    def __new__(cls, path=None, *args, **kwargs):
+        """
+            Override new() so that base class cannot be instantiated.
+        """
+        if cls is KLSampleSheetWithSampleContext:
+            raise TypeError(
+                f"only children of '{cls.__name__}' may be instantiated")
+
+        instance = super(KLSampleSheetWithSampleContext, cls).__new__(
+            cls, *args, **kwargs)
+        return instance
+
+    def __init__(self, path=None):
+        """Knight Lab's SampleSheet subclass that includes SampleContext
+
+        Expands Knight Lab SampleSheet to include a new (required) section
+        called 'SampleContext'. This section is used to store information
+        about the blanks and other controls used in the sequencing run.
+
+        Parameters
+        ----------
+        path: str, optional
+            File path to the sample sheet to load.
+        """
+        super().__init__(path=path)
+        self.COLS_BY_EXTRA_DF_SECTION_NAME = {
+            'Bioinformatics': self._BIOINFORMATICS_COL_ORDER,
+            'Contact': self._CONTACT_COL_ORDER,
+            SAMPLE_CONTEXT_KEY: self._SAMPLE_CONTEXT_COL_ORDER
+        }
+
+        self._ALL_METADATA[SAMPLE_CONTEXT_KEY] = None
+
+        new_sections_list = list(self.sections) + [SAMPLE_CONTEXT_KEY]
+        self.sections = tuple(new_sections_list)
+
+        self.Sample_Context = None
+
+        if self.path:
+            self._parse(self.path)
+
+            # TODO: do we need to normalize booleans for Sample_Context?
+            # # if self.Bioinformatics is successfully populated after parsing
+            # # file, then convert the boolean parameters from strings to
+            # # booleans. Ignore any messages returned _normalize_bi_booleans()
+            # # because we are not validating, just converting datatypes.
+            # if self.Bioinformatics is not None:
+            #     self._normalize_bi_booleans()
+
+
 class AmpliconSampleSheet(KLSampleSheet):
     _HEADER = {
         'IEMFileVersion': '4',
@@ -890,6 +939,63 @@ class AmpliconSampleSheet(KLSampleSheet):
         }
 
 
+class MetagenomicSampleSheetv102(KLSampleSheetWithSampleContext):
+    # A copy of MetagenomicSampleSheetv100 (*not* 101) but inherits from
+    # KLSampleSheetWithSampleContext. This is the first version of the
+    # metagenomic sample sheet that includes the SampleContext section.
+    _HEADER = {
+        'IEMFileVersion': '4',
+        'SheetType': _STANDARD_METAG_SHEET_TYPE,
+        'SheetVersion': '102',
+        'Investigator Name': 'Knight',
+        'Experiment Name': 'RKL_experiment',
+        'Date': None,
+        'Workflow': 'GenerateFASTQ',
+        'Application': 'FASTQ Only',
+        'Assay': _METAGENOMIC,
+        'Description': '',
+        'Chemistry': 'Default',
+    }
+
+    # Note that there doesn't appear to be a difference between 95, 99, and 100
+    # beyond the value observed in 'Well_description' column. The real
+    # difference is between standard_metag and abs_quant_metag.
+    data_columns = ['Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
+                    'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
+                    'Sample_Project', 'Well_description']
+
+    # For now, assume only AbsQuantSampleSheetv10 doesn't contain
+    # 'contains_replicates' column, while the others do.
+    _BIOINFORMATICS_COL_ORDER = ['Sample_Project', 'QiitaID', 'BarcodesAreRC',
+                                 'ForwardAdapter', 'ReverseAdapter',
+                                 'HumanFiltering', 'contains_replicates',
+                                 'library_construction_protocol',
+                                 'experiment_design_description']
+
+    _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
+                                          'contains_replicates'})
+
+    CARRIED_PREP_COLUMNS = ['experiment_design_description', 'i5_index_id',
+                            'i7_index_id', 'index', 'index2',
+                            'library_construction_protocol', 'sample_name',
+                            'sample_plate', 'sample_project',
+                            'well_description', 'well_id_384']
+
+    def __init__(self, path=None):
+        super().__init__(path=path)
+        self.remapper = {
+            'sample sheet Sample_ID': 'Sample_ID',
+            'Sample': 'Sample_Name',
+            'Project Plate': 'Sample_Plate',
+            'Well': 'well_id_384',
+            'i7 name': 'I7_Index_ID',
+            'i7 sequence': 'index',
+            'i5 name': 'I5_Index_ID',
+            'i5 sequence': 'index2',
+            'Project Name': 'Sample_Project',
+        }
+
+
 class MetagenomicSampleSheetv101(KLSampleSheet):
     # Adds support for optional KATHAROSEQ columns in [Data] section.
 
@@ -911,7 +1017,7 @@ class MetagenomicSampleSheetv101(KLSampleSheet):
                     'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
                     'Sample_Project', 'Well_description']
 
-    # columns present in an pre-prep file (amplicon) that included katharoseq
+    # columns present in a pre-prep file (amplicon) that included katharoseq
     # controls. Presumably we will need these same columns in a sample-sheet.
     optional_katharoseq_columns = ['Kathseq_RackID', 'TubeCode',
                                    'katharo_description',
@@ -922,11 +1028,13 @@ class MetagenomicSampleSheetv101(KLSampleSheet):
 
     # For now, assume only MetagenomicSampleSheetv101 (v100, v95, v99) contains
     # 'contains_replicates' column. Assume AbsQuantSampleSheetv10 doesn't.
-    _BIOINFORMATICS_COLUMNS = {'Sample_Project', 'QiitaID', 'BarcodesAreRC',
-                               'ForwardAdapter', 'ReverseAdapter',
-                               'HumanFiltering', 'contains_replicates',
-                               'library_construction_protocol',
-                               'experiment_design_description'}
+    _BIOINFORMATICS_COL_ORDER = ['Sample_Project', 'QiitaID', 'BarcodesAreRC',
+                                 'ForwardAdapter', 'ReverseAdapter',
+                                 'HumanFiltering', 'contains_replicates',
+                                 'library_construction_protocol',
+                                 'experiment_design_description']
+    # Q: why is this NOT a frozenset?
+    _BIOINFORMATICS_COLUMNS = set(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
                                           'contains_replicates'})
@@ -1017,12 +1125,13 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
 
     # For now, assume only AbsQuantSampleSheetv10 doesn't contain
     # 'contains_replicates' column, while the others do.
-
-    _BIOINFORMATICS_COLUMNS = {'Sample_Project', 'QiitaID', 'BarcodesAreRC',
-                               'ForwardAdapter', 'ReverseAdapter',
-                               'HumanFiltering', 'contains_replicates',
-                               'library_construction_protocol',
-                               'experiment_design_description'}
+    _BIOINFORMATICS_COL_ORDER = ['Sample_Project', 'QiitaID', 'BarcodesAreRC',
+                                 'ForwardAdapter', 'ReverseAdapter',
+                                 'HumanFiltering', 'contains_replicates',
+                                 'library_construction_protocol',
+                                 'experiment_design_description']
+    # Q: why is this NOT a frozenset?
+    _BIOINFORMATICS_COLUMNS = set(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
                                           'contains_replicates'})
@@ -1049,12 +1158,12 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
 
 
 class MetagenomicSampleSheetv90(KLSampleSheet):
-    '''
+    """
     MetagenomicSampleSheetv90 is meant to be a class to handle legacy
     Metagenomic type sample-sheets, since KLSampleSheet() itself can't be
     instantiated anymore. What makes it unique is that it specifies a version
     number and defines the classic values for self.remapper.
-    '''
+    """
     _HEADER = {
         'IEMFileVersion': '4',
         'SheetType': _STANDARD_METAG_SHEET_TYPE,
@@ -1114,11 +1223,11 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
                     'vol_extracted_elution_ul', 'syndna_pool_number',
                     'Well_description']
 
-    _BIOINFORMATICS_COLUMNS = frozenset({
+    _BIOINFORMATICS_COL_ORDER = [
         'Sample_Project', 'QiitaID', 'BarcodesAreRC', 'ForwardAdapter',
         'ReverseAdapter', 'HumanFiltering', 'library_construction_protocol',
-        'experiment_design_description', 'contains_replicates'
-    })
+        'experiment_design_description', 'contains_replicates']
+    _BIOINFORMATICS_COLUMNS = frozenset(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
                                           'contains_replicates'})
@@ -1172,12 +1281,11 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
                     'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
                     'Sample_Project', 'Well_description']
 
-    _BIOINFORMATICS_COLUMNS = frozenset({'Sample_Project', 'QiitaID',
-                                         'BarcodesAreRC', 'ForwardAdapter',
-                                         'ReverseAdapter', 'HumanFiltering',
-                                         'contains_replicates',
-                                         'library_construction_protocol',
-                                         'experiment_design_description'})
+    _BIOINFORMATICS_COL_ORDER = [
+        'Sample_Project', 'QiitaID', 'BarcodesAreRC', 'ForwardAdapter',
+        'ReverseAdapter', 'HumanFiltering', 'contains_replicates',
+        'library_construction_protocol', 'experiment_design_description']
+    _BIOINFORMATICS_COLUMNS = frozenset(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
                                           'contains_replicates'})
@@ -1228,13 +1336,11 @@ class MetatranscriptomicSampleSheetv10(KLSampleSheet):
                     'Sample_Project', 'total_rna_concentration_ng_ul',
                     'vol_extracted_elution_ul', 'Well_description']
 
-    _BIOINFORMATICS_COLUMNS = frozenset({'Sample_Project', 'QiitaID',
-                                         'BarcodesAreRC', 'ForwardAdapter',
-                                         'ReverseAdapter', 'HumanFiltering',
-                                         'contains_replicates',
-                                         'library_construction_protocol',
-                                         'experiment_design_description',
-                                         'contains_replicates'})
+    _BIOINFORMATICS_COL_ORDER = [
+        'Sample_Project', 'QiitaID', 'BarcodesAreRC', 'ForwardAdapter',
+        'ReverseAdapter', 'HumanFiltering', 'library_construction_protocol',
+        'experiment_design_description', 'contains_replicates']
+    _BIOINFORMATICS_COLUMNS = frozenset(_BIOINFORMATICS_COL_ORDER)
 
     _BIOINFORMATICS_BOOLEANS = frozenset({'BarcodesAreRC', 'HumanFiltering',
                                           'contains_replicates'})
@@ -1303,7 +1409,9 @@ def load_sample_sheet(sample_sheet_path):
 def _create_sample_sheet(sheet_type, sheet_version, assay_type):
     if sheet_type == _STANDARD_METAG_SHEET_TYPE:
         if assay_type == _METAGENOMIC:
-            if sheet_version == '101':
+            if sheet_version == '102':
+                sheet = MetagenomicSampleSheetv102()
+            elif sheet_version == '101':
                 sheet = MetagenomicSampleSheetv101()
             elif sheet_version == '90':
                 sheet = MetagenomicSampleSheetv90()
@@ -1609,7 +1717,7 @@ def demux_sample_sheet(sheet):
             sheet.Contact['Sample_Project'].isin(projects)].reset_index(
             drop=True)
 
-        # TODO: How should the SAMPLE_CONTEXT_KEY section be handled?
+        # TODO: How should the SAMPLE_CONTEXT_KEY section be handled for reps?
 
         # for our purposes here, we want to reindex df so that the index
         # becomes Sample_ID and a new numeric index is created before
