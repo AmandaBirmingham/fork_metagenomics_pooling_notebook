@@ -76,6 +76,48 @@ _CONTACT_COLS = MappingProxyType({
     _SS_SAMPLE_PROJECT_KEY: str,
     _EMAIL_KEY: str})
 
+# Note that there doesn't appear to be a difference between 95, 99, and 100
+# beyond the value observed in 'Well_description' column. The real
+# difference is between standard_metag and abs_quant_metag.
+_BASE_DATA_COLUMNS = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
+                      'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
+                      'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+
+_BASE_CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+                              'i7_index_id', 'index', 'index2',
+                              'library_construction_protocol',
+                              SAMPLE_NAME_KEY, 'sample_plate',
+                              'sample_project', 'well_description',
+                              'well_id_384']
+
+_ELUTION_VOL_KEY = 'vol_extracted_elution_ul'
+_ABS_SYNDNA_INPUT_MASS_KEY = 'mass_syndna_input_ng'
+_ABS_GDNA_CONC_KEY = 'extracted_gdna_concentration_ng_ul'
+_ABS_SYNDNA_POOL_NUM_KEY = 'syndna_pool_number'
+_ABSQUANT_SPECIFIC_COLUMNS = {
+    _ABS_SYNDNA_INPUT_MASS_KEY, _ABS_GDNA_CONC_KEY,
+    _ELUTION_VOL_KEY, _ABS_SYNDNA_POOL_NUM_KEY}
+
+_BASE_METAG_REMAPPER = MappingProxyType({
+            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
+            'Sample': _SS_SAMPLE_NAME_KEY,
+            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
+            'Well': 'well_id_384',
+            'i7 name': 'I7_Index_ID',
+            'i7 sequence': 'index',
+            'i5 name': 'I5_Index_ID',
+            'i5 sequence': 'index2',
+            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
+        })
+
+_ABSQUANT_REMAPPER = MappingProxyType(
+    _BASE_METAG_REMAPPER.copy() | {
+            _ABS_SYNDNA_POOL_NUM_KEY: _ABS_SYNDNA_POOL_NUM_KEY,
+            _ABS_SYNDNA_INPUT_MASS_KEY: _ABS_SYNDNA_INPUT_MASS_KEY,
+            _ABS_GDNA_CONC_KEY: _ABS_GDNA_CONC_KEY,
+            _ELUTION_VOL_KEY: _ELUTION_VOL_KEY
+    })
+
 
 class KLSampleSheet(sample_sheet.SampleSheet):
     _ASSAYS = frozenset({_AMPLICON, _METAGENOMIC, _METATRANSCRIPTOMIC})
@@ -1038,6 +1080,8 @@ class KLSampleSheetWithSampleContext(KLSampleSheet):
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY, _SAMPLE_CONTEXT_KEY)
 
+    data_columns = _BASE_DATA_COLUMNS
+
     def __new__(cls, path=None, *args, **kwargs):
         """
             Override so that base class cannot be instantiated.
@@ -1111,47 +1155,17 @@ class MetagenomicSampleSheetv102(KLSampleSheetWithSampleContext):
     # A copy of MetagenomicSampleSheetv100 (*not* 101) but inherits from
     # KLSampleSheetWithSampleContext. This is the first version of the
     # metagenomic sample sheet that includes the SampleContext section.
-    _HEADER = {
-        'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAG_SHEET_TYPE,
-        _SHEET_VERSION_KEY: '102',
-        'Investigator Name': 'Knight',
-        _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
-        'Date': None,
-        'Workflow': 'GenerateFASTQ',
-        'Application': 'FASTQ Only',
-        _ASSAY_KEY: _METAGENOMIC,
-        'Description': '',
-        'Chemistry': 'Default',
-    }
 
-    # Note that there doesn't appear to be a difference between 95, 99, and 100
-    # beyond the value observed in 'Well_description' column. The real
-    # difference is between standard_metag and abs_quant_metag.
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+    _HEADER = KLSampleSheet._HEADER.copy()
+    _HEADER[_SHEET_TYPE_KEY] = _STANDARD_METAG_SHEET_TYPE
+    _HEADER[_SHEET_VERSION_KEY] = '102'
+    _HEADER[_ASSAY_KEY] = _METAGENOMIC
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
-                            'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            'well_description', 'well_id_384']
+    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-        }
+        self.remapper = _BASE_METAG_REMAPPER
 
 
 class MetagenomicSampleSheetv101(KLSampleSheet):
@@ -1171,9 +1185,7 @@ class MetagenomicSampleSheetv101(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+    data_columns = _BASE_DATA_COLUMNS
 
     # columns present in a pre-prep file (amplicon) that included katharoseq
     # controls. Presumably we will need these same columns in a sample-sheet.
@@ -1182,34 +1194,20 @@ class MetagenomicSampleSheetv101(KLSampleSheet):
                                    'number_of_cells',
                                    'platemap_generation_date',
                                    'project_abbreviation',
-                                   'vol_extracted_elution_ul', 'well_id_96']
+                                   _ELUTION_VOL_KEY, 'well_id_96']
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
-                            'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            'well_description', 'well_id_384']
+    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-            'Kathseq_RackID': 'Kathseq_RackID'
-        }
+        # TODO: how to get mutable dict from mappingtypeproxy?
+        self.remapper = dict(_BASE_METAG_REMAPPER.copy())
+        self.remapper['Kathseq_RackID'] = 'Kathseq_RackID'
 
     def contains_katharoseq_samples(self):
         # when creating samples manually, as opposed to loading a sample-sheet
@@ -1270,9 +1268,7 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
     # Note that there doesn't appear to be a difference between 95, 99, and 100
     # beyond the value observed in 'Well_description' column. The real
     # difference is between standard_metag and abs_quant_metag.
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+    data_columns = _BASE_DATA_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
@@ -1288,17 +1284,7 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-        }
+        self.remapper = _BASE_METAG_REMAPPER
 
 
 class MetagenomicSampleSheetv90(KLSampleSheet):
@@ -1361,12 +1347,7 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'mass_syndna_input_ng',
-                    'extracted_gdna_concentration_ng_ul',
-                    'vol_extracted_elution_ul', 'syndna_pool_number',
-                    'Well_description']
+    data_columns = set(_BASE_DATA_COLUMNS) | _ABSQUANT_SPECIFIC_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
@@ -1379,28 +1360,17 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
                             'library_construction_protocol',
                             'mass_syndna_input_ng', SAMPLE_NAME_KEY,
                             'sample_plate', 'sample_project',
-                            'syndna_pool_number', 'vol_extracted_elution_ul',
+                            _ABS_SYNDNA_POOL_NUM_KEY, _ELUTION_VOL_KEY,
                             'well_description', 'well_id_384']
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-            'syndna_pool_number': 'syndna_pool_number',
-            'mass_syndna_input_ng': 'mass_syndna_input_ng',
-            'extracted_gdna_concentration_ng_ul':
-                'extracted_gdna_concentration_ng_ul',
-            'vol_extracted_elution_ul':
-                'vol_extracted_elution_ul'
-        }
+        self.remapper = _ABSQUANT_REMAPPER
+
+
+class AbsQuantSampleSheetv11(KLSampleSheetWithSampleContext):
+    _HEADER = AbsQuantSampleSheetv10._HEADER.copy()
+    _HEADER[_SHEET_VERSION_KEY] = '11'
 
 
 class MetatranscriptomicSampleSheetv0(KLSampleSheet):
@@ -1418,35 +1388,18 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+    data_columns = _BASE_DATA_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
-                            'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            'well_description', 'well_id_384']
+    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-        }
+        self.remapper = _BASE_METAG_REMAPPER
 
 
 class MetatranscriptomicSampleSheetv10(KLSampleSheet):
@@ -1473,32 +1426,19 @@ class MetatranscriptomicSampleSheetv10(KLSampleSheet):
                     'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
                     'index2', _SS_SAMPLE_PROJECT_KEY,
                     'total_rna_concentration_ng_ul',
-                    'vol_extracted_elution_ul', 'Well_description']
+                    _ELUTION_VOL_KEY, 'Well_description']
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
-                            'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            'well_description', 'well_id_384',
+    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy() + [
                             'total_rna_concentration_ng_ul',
-                            'vol_extracted_elution_ul']
+                            _ELUTION_VOL_KEY]
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
-            'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
-            'Sample': _SS_SAMPLE_NAME_KEY,
-            PM_PROJECT_PLATE_KEY: 'Sample_Plate',
-            'Well': 'well_id_384',
-            'i7 name': 'I7_Index_ID',
-            'i7 sequence': 'index',
-            'i5 name': 'I5_Index_ID',
-            'i5 sequence': 'index2',
-            PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
-            'Sample RNA Concentration': 'total_rna_concentration_ng_ul',
-            'vol_extracted_elution_ul': 'vol_extracted_elution_ul'
-        }
+        self.remapper = MappingProxyType(
+            _BASE_METAG_REMAPPER.copy() | {
+                'Sample RNA Concentration': 'total_rna_concentration_ng_ul',
+                _ELUTION_VOL_KEY: _ELUTION_VOL_KEY
+            })
 
 
 def load_sample_sheet(sample_sheet_path):
