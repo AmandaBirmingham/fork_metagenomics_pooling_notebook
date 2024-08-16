@@ -1205,8 +1205,7 @@ class MetagenomicSampleSheetv101(KLSampleSheet):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        # TODO: how to get mutable dict from mappingtypeproxy?
-        self.remapper = dict(_BASE_METAG_REMAPPER.copy())
+        self.remapper = _BASE_METAG_REMAPPER.copy()
         self.remapper['Kathseq_RackID'] = 'Kathseq_RackID'
 
     def contains_katharoseq_samples(self):
