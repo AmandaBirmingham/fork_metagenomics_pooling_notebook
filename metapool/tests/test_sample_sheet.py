@@ -15,7 +15,6 @@ from metapool.literals import (QIITA_ID_KEY, PROJECT_SHORT_NAME_KEY,
                                PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY)
 from metapool.metapool import TUBECODE_KEY
 from metapool.sample_sheet import (KLSampleSheet, AmpliconSampleSheet,
-                                   MetagenomicSampleSheetv102,
                                    MetagenomicSampleSheetv101,
                                    MetagenomicSampleSheetv100,
                                    MetagenomicSampleSheetv90,
@@ -615,7 +614,7 @@ class KLSampleSheetTests(BaseTests):
             sheet.sample_is_a_blank('blank_40_12g')
 
     def test_sample_is_a_blank_w_context(self):
-        sheet = MetagenomicSampleSheetv102(self.good_metag_ss_w_context)
+        sheet = MetagenomicSampleSheetv101(self.good_metag_ss_w_context)
         # NB: the sample names and sample ids in the test spreadsheet are the
         # same.  FWIW, the intention is to use the sample names here.
         self.assertFalse(sheet.sample_is_a_blank(
@@ -640,7 +639,7 @@ class KLSampleSheetTests(BaseTests):
             'BLANK3_3E', 'BLANK3_3F', 'BLANK3_3G', 'BLANK3_3H', 'BLANK4_4A',
             'BLANK4_4B', 'BLANK4_4C', 'BLANK4_4D', 'BLANK4_4E', 'BLANK4_4F',
             'BLANK4_4G', 'BLANK4_4H']
-        sheet = MetagenomicSampleSheetv102(self.good_metag_ss_w_context)
+        sheet = MetagenomicSampleSheetv101(self.good_metag_ss_w_context)
         obs_details = sheet.get_controls_details()
         self.assertEqual(len(exp_blank_names), len(obs_details))
         for curr_blank_name in exp_blank_names:
@@ -1512,7 +1511,7 @@ class SampleSheetWorkflow(BaseTests):
         exp = {
             'Experiment Name': 'RKL001',
             'SheetType': 'standard_metag',
-            'SheetVersion': '102',
+            'SheetVersion': '101',
             'Assay': 'Metagenomic',
             'Bioinformatics': [
                 {'ForwardAdapter': 'GATCGGAAGAGCACACGTCTGAACTCCAGTCAC',
@@ -1568,7 +1567,7 @@ class SampleSheetWorkflow(BaseTests):
 
         obs = make_sections_dict(
             compressed_plate_df, studies_info, "RKL001",
-            'standard_metag', '102', bioinfo_base)
+            'standard_metag', '101', bioinfo_base)
         self.assertDictEqual(exp, obs)
 
 
@@ -1593,7 +1592,7 @@ class ValidateSampleSheetTests(BaseTests):
         self.assertEqual(msgs, [])
 
     def test_quiet_validate_and_scrub_sample_sheet_w_context(self):
-        sheet = MetagenomicSampleSheetv102(self.good_metag_ss_w_context)
+        sheet = MetagenomicSampleSheetv101(self.good_metag_ss_w_context)
         msgs = sheet.quiet_validate_and_scrub_sample_sheet()
         # no errors
         self.assertStdOutEqual('')
@@ -1773,7 +1772,7 @@ class ValidateSampleSheetTests(BaseTests):
         self.assertStdOutEqual(message)
 
     def test_validate_and_scrub_sample_sheet_missing_project_names(self):
-        sheet = MetagenomicSampleSheetv102(self.good_metag_ss_w_context)
+        sheet = MetagenomicSampleSheetv101(self.good_metag_ss_w_context)
         # pick a random entry in the sample context section and set its
         # qiita study id to something that doesn't exist in the other metadata
         a_blank_mask = sheet.SampleContext[SAMPLE_NAME_KEY] == "BLANK1_1A"
@@ -1827,7 +1826,7 @@ class ProfileTests(BaseTests):
         # from its parent.
         self.assertEqual(sheet._HEADER['SheetType'], 'abs_quant_metag')
         self.assertEqual(sheet._HEADER['SheetVersion'], '10')
-        self.assertIn('mass_syndna_input_ng', sheet.data_columns)
+        self.assertIn('mass_syndna_input_ng', sheet._data_columns)
 
 
 class DemuxReplicatesTests(BaseTests):
@@ -1955,7 +1954,7 @@ class DemuxReplicatesTests(BaseTests):
         # test sample-sheet w/both projects w/replicates and not.
         demux_sheet_w_context_path = join(
             self.data_dir, "good_sheet_w_replicates_and_context.csv")
-        sheet = MetagenomicSampleSheetv102(demux_sheet_w_context_path)
+        sheet = MetagenomicSampleSheetv101(demux_sheet_w_context_path)
         results = demux_sample_sheet(sheet)
 
         # assert that the proper number of KLSampleSheets were returned.
@@ -1966,7 +1965,7 @@ class DemuxReplicatesTests(BaseTests):
         for replicate_output_path in self.replicate_output_paths:
             rep_context_path = replicate_output_path.replace(
                 '.csv', '_w_context.csv')
-            exp = MetagenomicSampleSheetv102(rep_context_path)
+            exp = MetagenomicSampleSheetv101(rep_context_path)
             obs = results.pop(0)
             self.assertEqual(obs.Header, exp.Header)
             self.assertEqual(obs.Reads, exp.Reads)
@@ -2240,9 +2239,9 @@ class AdditionalSampleSheetCreationTests(BaseTests):
                            '14577', ""],
                           ]
 
-        sheet = MetagenomicSampleSheetv102()
+        sheet = MetagenomicSampleSheetv101()
         sheet = self._fill_test_metagenomic_sheet(sheet, bfx=bfx, data=data)
-        sheet.Header['SheetVersion'] = '102'
+        sheet.Header['SheetVersion'] = '101'
         sheet.SampleContext = pd.DataFrame(
             columns=[SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY,
                      PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY],
@@ -2269,13 +2268,13 @@ class AdditionalSampleSheetCreationTests(BaseTests):
 
     def test_metagenomic_sheet_w_context_load(self):
         # confirm manual loading is w/out error.
-        sheet = MetagenomicSampleSheetv102(self.good_metag_ss_w_context)
+        sheet = MetagenomicSampleSheetv101(self.good_metag_ss_w_context)
         self.assertTrue(sheet.validate_and_scrub_sample_sheet())
 
         # confirm load_sample_sheet() returns the correct child class of
         # KLSampleSheet.
         sheet = load_sample_sheet(self.good_metag_ss_w_context)
-        self.assertIsInstance(sheet, MetagenomicSampleSheetv102)
+        self.assertIsInstance(sheet, MetagenomicSampleSheetv101)
 
 
 class KarathoseqEnabledSheetCreationTests(BaseTests):
@@ -2324,6 +2323,7 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
                     'Email': 'foo@bar.org'
                 }
             ],
+            'SampleContext': [],
             'Assay': 'Metagenomic',
             'SheetType': 'standard_metag',
             'SheetVersion': '101'
@@ -2371,6 +2371,8 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
             columns=['Email', 'Sample_Project'],
             data=[['c2cowart@ucsd.edu',
                    'Project1_99999'], ])
+
+        self.test_sheet.SampleContext = pd.DataFrame()
 
     def test_katharoseq_enabled_sheet_load(self):
         # load metagenomic sample-sheet w/out katharoseq samples in the [Data]
@@ -2480,6 +2482,10 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         sheet.Contact = pd.DataFrame(columns=['Email', 'Sample_Project'],
                                      data=[['c2cowart@ucsd.edu',
                                             'Project1_99999'],])
+        # NB: SampleContext is empty, which is allowed
+        sheet.SampleContext = pd.DataFrame(columns=[
+            'sample_name', 'sample_type', 'primary_qiita_study',
+            'secondary_qiita_studies'])
 
         header = ['Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
                   'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',

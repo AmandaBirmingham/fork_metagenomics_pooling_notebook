@@ -91,12 +91,6 @@ _BASE_CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                               'well_id_384']
 
 _ELUTION_VOL_KEY = 'vol_extracted_elution_ul'
-_ABS_SYNDNA_INPUT_MASS_KEY = 'mass_syndna_input_ng'
-_ABS_GDNA_CONC_KEY = 'extracted_gdna_concentration_ng_ul'
-_ABS_SYNDNA_POOL_NUM_KEY = 'syndna_pool_number'
-_ABSQUANT_SPECIFIC_COLUMNS = {
-    _ABS_SYNDNA_INPUT_MASS_KEY, _ABS_GDNA_CONC_KEY,
-    _ELUTION_VOL_KEY, _ABS_SYNDNA_POOL_NUM_KEY}
 
 _BASE_METAG_REMAPPER = MappingProxyType({
             'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
@@ -109,14 +103,6 @@ _BASE_METAG_REMAPPER = MappingProxyType({
             'i5 sequence': 'index2',
             PM_PROJECT_NAME_KEY: _SS_SAMPLE_PROJECT_KEY,
         })
-
-_ABSQUANT_REMAPPER = MappingProxyType(
-    _BASE_METAG_REMAPPER.copy() | {
-            _ABS_SYNDNA_POOL_NUM_KEY: _ABS_SYNDNA_POOL_NUM_KEY,
-            _ABS_SYNDNA_INPUT_MASS_KEY: _ABS_SYNDNA_INPUT_MASS_KEY,
-            _ABS_GDNA_CONC_KEY: _ABS_GDNA_CONC_KEY,
-            _ELUTION_VOL_KEY: _ELUTION_VOL_KEY
-    })
 
 
 class KLSampleSheet(sample_sheet.SampleSheet):
@@ -162,7 +148,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY)
 
-    data_columns = (SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
+    _data_columns = (SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
                     'Sample_Well', 'I7_Index_ID', 'index', 'I5_Index_ID',
                     'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
 
@@ -579,11 +565,14 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                 temp_df = pd.DataFrame(metadata[metadata_key])
                 col_order = \
                     list(self._KL_ADDTL_DF_SECTIONS[metadata_key].keys())
-                if set(col_order) != set(temp_df.columns):
-                    raise ErrorMessage(
-                        f"Columns in {metadata_key} section do not match "
-                        f"expected columns: {col_order}")
-                temp_df = temp_df[col_order]
+                if temp_df.empty:
+                    temp_df = pd.DataFrame(columns=col_order)
+                else:
+                    if set(col_order) != set(temp_df.columns):
+                        raise ValueError(
+                            f"Columns in {metadata_key} section do not match "
+                            f"expected columns: {col_order}")
+                    temp_df = temp_df[col_order]
                 setattr(self, metadata_key, temp_df)
 
         # Per MacKenzie's request for 16S don't include Investigator Name and
@@ -614,7 +603,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         if type_found is None:
             # if even the 'iSeq' substring could not be found, this is an
             # unlikely and unexpected value for sequencer.
-            raise ErrorMessage(f"{sequencer} isn't a known sequencer")
+            raise ValueError(f"{sequencer} isn't a known sequencer")
         elif type_found == 'iseq':
             #   Verify the settings exist before deleting them.
             if 'MaskShortReads' in self.Settings:
@@ -641,7 +630,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         # this base (general) implementation of this method does nothing w/
         # the table parameter. It is present only for compatibility with child
         # methods.
-        return self.data_columns
+        return self._data_columns
 
     def validate_and_scrub_sample_sheet(self, echo_msgs=True):
         """Validate the sample sheet and scrub invalid characters
@@ -803,6 +792,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         # project identifiers are digit groups at the end of the project name
         # preceded by an underscore, as in: CaporasoIllumina_550
+        # TODO: replace w call to remove_qiita_id or something else centralized
         qiita_id_re = re.compile(r'(.+)_(\d+)$')
         bad_projects = []
         for project_name in data_project_names:
@@ -1080,8 +1070,6 @@ class KLSampleSheetWithSampleContext(KLSampleSheet):
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY, _SAMPLE_CONTEXT_KEY)
 
-    data_columns = _BASE_DATA_COLUMNS
-
     def __new__(cls, path=None, *args, **kwargs):
         """
             Override so that base class cannot be instantiated.
@@ -1113,6 +1101,106 @@ class KLSampleSheetWithSampleContext(KLSampleSheet):
         # it is defined here first.
         self.SampleContext = None
         super().__init__(path=path)
+        self.remapper = _BASE_METAG_REMAPPER.copy()
+        self._data_columns = _BASE_DATA_COLUMNS.copy()
+        self._CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
+
+    @property
+    def CARRIED_PREP_COLUMNS(self):
+        return self._CARRIED_PREP_COLUMNS
+
+
+class AbsQuantMixin(object):
+    _ABS_SYNDNA_INPUT_MASS_KEY = 'mass_syndna_input_ng'
+    _ABS_GDNA_CONC_KEY = 'extracted_gdna_concentration_ng_ul'
+    _ABS_SYNDNA_POOL_NUM_KEY = 'syndna_pool_number'
+    _ABSQUANT_SPECIFIC_COLUMNS = [
+        _ABS_SYNDNA_INPUT_MASS_KEY, _ABS_GDNA_CONC_KEY,
+        _ELUTION_VOL_KEY, _ABS_SYNDNA_POOL_NUM_KEY]
+
+    _ABSQUANT_REMAPPER = MappingProxyType(
+        _BASE_METAG_REMAPPER | {
+            _ABS_SYNDNA_POOL_NUM_KEY: _ABS_SYNDNA_POOL_NUM_KEY,
+            _ABS_SYNDNA_INPUT_MASS_KEY: _ABS_SYNDNA_INPUT_MASS_KEY,
+            _ABS_GDNA_CONC_KEY: _ABS_GDNA_CONC_KEY,
+            _ELUTION_VOL_KEY: _ELUTION_VOL_KEY
+        })
+
+    def __init__(self, path=None):
+        super().__init__(path=path)
+        curr_remapper = getattr(self, 'remapper', {})
+        self.remapper = curr_remapper | self._ABSQUANT_REMAPPER
+        self._data_columns = \
+            self._data_columns + self._ABSQUANT_SPECIFIC_COLUMNS
+        self._CARRIED_PREP_COLUMNS = self.CARRIED_PREP_COLUMNS + \
+                                     self._ABSQUANT_SPECIFIC_COLUMNS
+
+
+
+# NB: Must be mixed in to something that inherits from KLSampleSheetWithContext
+# since it relies on having self.remapper set in the super's __init__, and on
+# the `samples` and `data_columns` attributes
+class KatharoseqMixin(object):
+    _KATH_RACK_ID_KEY = 'Kathseq_RackID'
+    _KATHARO_PREFIX = 'katharo'
+
+    # columns present in a pre-prep file (amplicon) that included katharoseq
+    # controls. Presumably we will need these same columns in a sample-sheet.
+    optional_katharoseq_columns = [_KATH_RACK_ID_KEY, TUBECODE_KEY,
+                                   'katharo_description',
+                                   'number_of_cells',
+                                   'platemap_generation_date',
+                                   'project_abbreviation',
+                                   _ELUTION_VOL_KEY, 'well_id_96']
+
+    @staticmethod
+    def _is_katharo_name(sample_name):
+        return sample_name.lower().startswith(KatharoseqMixin._KATHARO_PREFIX)
+
+    def __init__(self, path=None):
+        super().__init__(path=path)
+        self.remapper[self._KATH_RACK_ID_KEY] = self._KATH_RACK_ID_KEY
+
+    def contains_katharoseq_samples(self):
+        # when creating samples manually, as opposed to loading a sample-sheet
+        # from file, whether or not a sample-sheet contains katharoseq
+        # controls can change from add_sample() to add_sample() and won't be
+        # determined when MetagenomicSampleSheetv101() is created w/out a
+        # file. Hence, perform this check on demand() as opposed to once at
+        # init().
+        for sample in self.samples:
+            # assume any sample-name beginning with 'katharo' in any form of
+            # case is a katharoseq sample.
+            if self._is_katharo_name(sample.Sample_Name):
+                return True
+
+        return False
+
+    def _table_contains_katharoseq_samples(self, table):
+        # for instances when a MetagenomicSampleSheetv101() object contains
+        # no samples, and the samples will be added in a single method call.
+        # this helper method will return True only if a katharo-control
+        # sample is found. Note criteria for this method should be kept
+        # consistent w/the above method (contains_katharoseq_samples).
+        is_katharos = table[_SS_SAMPLE_NAME_KEY].apply(self._is_katharo_name)
+        return is_katharos.any()
+
+    def _get_expected_columns(self, table=None):
+        if table is None:
+            # if [Data] section contains katharoseq samples, add the expected
+            # additional katharoseq columns to the official list of expected
+            # columns before validation or other processing begins.
+            if self.contains_katharoseq_samples():
+                return self._data_columns + self.optional_katharoseq_columns
+        else:
+            # assume that there are no samples added to this object yet. This
+            # means that self.contains_katharoseq_samples() will always return
+            # False. Assume table contains a list of samples that may or may
+            # not contain katharoseq controls.
+            if self._table_contains_katharoseq_samples(table):
+                return self._data_columns + self.optional_katharoseq_columns
+
+        return self._data_columns
 
 
 class AmpliconSampleSheet(KLSampleSheet):
@@ -1151,102 +1239,14 @@ class AmpliconSampleSheet(KLSampleSheet):
         }
 
 
-class MetagenomicSampleSheetv102(KLSampleSheetWithSampleContext):
-    # A copy of MetagenomicSampleSheetv100 (*not* 101) but inherits from
-    # KLSampleSheetWithSampleContext. This is the first version of the
-    # metagenomic sample sheet that includes the SampleContext section.
+class MetagenomicSampleSheetv101(
+    KatharoseqMixin, KLSampleSheetWithSampleContext):
+    # Adds support for optional KATHAROSEQ columns in [Data] section.
 
     _HEADER = KLSampleSheet._HEADER.copy()
     _HEADER[_SHEET_TYPE_KEY] = _STANDARD_METAG_SHEET_TYPE
-    _HEADER[_SHEET_VERSION_KEY] = '102'
+    _HEADER[_SHEET_VERSION_KEY] = '101'
     _HEADER[_ASSAY_KEY] = _METAGENOMIC
-
-    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
-
-    def __init__(self, path=None):
-        super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER
-
-
-class MetagenomicSampleSheetv101(KLSampleSheet):
-    # Adds support for optional KATHAROSEQ columns in [Data] section.
-
-    _HEADER = {
-        'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAG_SHEET_TYPE,
-        _SHEET_VERSION_KEY: '101',
-        'Investigator Name': 'Knight',
-        _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
-        'Date': None,
-        'Workflow': 'GenerateFASTQ',
-        'Application': 'FASTQ Only',
-        _ASSAY_KEY: _METAGENOMIC,
-        'Description': '',
-        'Chemistry': 'Default',
-    }
-
-    data_columns = _BASE_DATA_COLUMNS
-
-    # columns present in a pre-prep file (amplicon) that included katharoseq
-    # controls. Presumably we will need these same columns in a sample-sheet.
-    optional_katharoseq_columns = ['Kathseq_RackID', TUBECODE_KEY,
-                                   'katharo_description',
-                                   'number_of_cells',
-                                   'platemap_generation_date',
-                                   'project_abbreviation',
-                                   _ELUTION_VOL_KEY, 'well_id_96']
-
-    _KL_ADDTL_DF_SECTIONS = {
-        _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
-        _CONTACT_KEY: _CONTACT_COLS,
-    }
-
-    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
-
-    def __init__(self, path=None):
-        super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER.copy()
-        self.remapper['Kathseq_RackID'] = 'Kathseq_RackID'
-
-    def contains_katharoseq_samples(self):
-        # when creating samples manually, as opposed to loading a sample-sheet
-        # from file, whether or not a sample-sheet contains katharoseq
-        # controls can change from add_sample() to add_sample() and won't be
-        # determined when MetagenomicSampleSheetv101() is created w/out a
-        # file. Hence, perform this check on demand() as opposed to once at
-        # init().
-        for sample in self.samples:
-            # assume any sample-name beginning with 'katharo' in any form of
-            # case is a katharoseq sample.
-            if sample.Sample_Name.lower().startswith('katharo'):
-                return True
-
-        return False
-
-    def _table_contains_katharoseq_samples(self, table):
-        # for instances when a MetagenomicSampleSheetv101() object contains
-        # no samples, and the samples will be added in a single method call.
-        # this helper method will return True only if a katharo-control
-        # sample is found. Note criteria for this method should be kept
-        # consistent w/the above method (contains_katharoseq_samples).
-        return table[_SS_SAMPLE_NAME_KEY].str.startswith('katharo').any()
-
-    def _get_expected_columns(self, table=None):
-        if table is None:
-            # if [Data] section contains katharoseq samples, add the expected
-            # additional katharoseq columns to the official list of expected
-            # columns before validation or other processing begins.
-            if self.contains_katharoseq_samples():
-                return self.data_columns + self.optional_katharoseq_columns
-        else:
-            # assume that there are no samples added to this object yet. This
-            # means that self.contains_katharoseq_samples() will always return
-            # False. Assume table contains a list of samples that may or may
-            # not contain katharoseq controls.
-            if self._table_contains_katharoseq_samples(table):
-                return self.data_columns + self.optional_katharoseq_columns
-
-        return self.data_columns
 
 
 class MetagenomicSampleSheetv100(KLSampleSheet):
@@ -1267,7 +1267,7 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
     # Note that there doesn't appear to be a difference between 95, 99, and 100
     # beyond the value observed in 'Well_description' column. The real
     # difference is between standard_metag and abs_quant_metag.
-    data_columns = _BASE_DATA_COLUMNS
+    _data_columns = _BASE_DATA_COLUMNS.copy()
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
@@ -1283,7 +1283,7 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER
+        self.remapper = _BASE_METAG_REMAPPER.copy()
 
 
 class MetagenomicSampleSheetv90(KLSampleSheet):
@@ -1346,29 +1346,25 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    data_columns = set(_BASE_DATA_COLUMNS) | _ABSQUANT_SPECIFIC_COLUMNS
+    _data_columns = _BASE_DATA_COLUMNS + \
+                   AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY,
-                            'extracted_gdna_concentration_ng_ul',
-                            'i5_index_id', 'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            'mass_syndna_input_ng', SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            _ABS_SYNDNA_POOL_NUM_KEY, _ELUTION_VOL_KEY,
-                            'well_description', 'well_id_384']
+    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS + \
+                           AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = _ABSQUANT_REMAPPER
+        self.remapper = AbsQuantMixin._ABSQUANT_REMAPPER
 
 
-class AbsQuantSampleSheetv11(KLSampleSheetWithSampleContext):
+class AbsQuantSampleSheetv11(AbsQuantMixin, KLSampleSheetWithSampleContext):
     _HEADER = AbsQuantSampleSheetv10._HEADER.copy()
+    _HEADER[_SHEET_TYPE_KEY] = _ABSQUANT_SHEET_TYPE
     _HEADER[_SHEET_VERSION_KEY] = '11'
 
 
@@ -1387,7 +1383,7 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    data_columns = _BASE_DATA_COLUMNS
+    _data_columns = _BASE_DATA_COLUMNS.copy()
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
@@ -1398,7 +1394,7 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER
+        self.remapper = _BASE_METAG_REMAPPER.copy()
 
 
 class MetatranscriptomicSampleSheetv10(KLSampleSheet):
@@ -1421,7 +1417,7 @@ class MetatranscriptomicSampleSheetv10(KLSampleSheet):
     # (Sample_Plate + Sample_Name + well_id_384) vs. just the sample_name
     # in previous iterations.
 
-    data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
+    _data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
                     'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
                     'index2', _SS_SAMPLE_PROJECT_KEY,
                     'total_rna_concentration_ng_ul',
@@ -1454,10 +1450,6 @@ def load_sample_sheet(sample_sheet_path):
     if sheet.validate_and_scrub_sample_sheet(echo_msgs=False):
         return sheet
 
-    sheet = MetagenomicSampleSheetv102(sample_sheet_path)
-    if sheet.validate_and_scrub_sample_sheet(echo_msgs=False):
-        return sheet
-
     sheet = MetagenomicSampleSheetv101(sample_sheet_path)
     if sheet.validate_and_scrub_sample_sheet(echo_msgs=False):
         return sheet
@@ -1485,9 +1477,7 @@ def load_sample_sheet(sample_sheet_path):
 def _create_sample_sheet(sheet_type, sheet_version, assay_type):
     if sheet_type == _STANDARD_METAG_SHEET_TYPE:
         if assay_type == _METAGENOMIC:
-            if sheet_version == '102':
-                sheet = MetagenomicSampleSheetv102()
-            elif sheet_version == '101':
+            if sheet_version == '101':
                 sheet = MetagenomicSampleSheetv101()
             elif sheet_version == '90':
                 sheet = MetagenomicSampleSheetv90()
