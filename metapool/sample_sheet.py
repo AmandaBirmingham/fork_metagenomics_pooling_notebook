@@ -8,9 +8,9 @@ from json import loads as json_loads
 import sample_sheet
 import pandas as pd
 from types import MappingProxyType
-from metapool.literals import parse_project_name, \
+from metapool.mp_strings import parse_project_name, \
     get_qiita_id_from_project_name, \
-    SAMPLES_KEY, SAMPLE_NAME_KEY, SAMPLE_PROJECT_KEY, \
+    SAMPLES_DETAILS_KEY, SAMPLE_NAME_KEY, SAMPLE_PROJECT_KEY, \
     CONTAINS_REPLICATES_KEY, ORIG_NAME_KEY, EXPT_DESIGN_DESC_KEY, \
     PM_PROJECT_NAME_KEY, PM_PROJECT_PLATE_KEY, PM_BLANK_KEY
 from metapool.metapool import (bcl_scrub_name, sequencer_i5_index,
@@ -331,6 +331,15 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     section = getattr(self, section_name)
                     section[key] = value
                     continue
+
+    def set_override_cycles(self, value):
+        # assume that any value including None is valid.
+        # None should be silently converted to empty string as a truly
+        # empty value would be better than None or na.
+        if value is None:
+            value = ''
+
+        self.Settings['OverrideCycles'] = value
 
     def _process_section_header(self, columns):
         for i in range(0, len(columns)):
@@ -924,7 +933,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             curr_full_project_name = \
                 curr_project_record[_SS_SAMPLE_PROJECT_KEY]
             curr_proj_dict = parse_project_name(curr_full_project_name)
-            curr_proj_dict[SAMPLES_KEY] = {}
+            curr_proj_dict[SAMPLES_DETAILS_KEY] = {}
 
             if CONTAINS_REPLICATES_KEY in curr_project_record:
                 curr_proj_dict[CONTAINS_REPLICATES_KEY] = \
@@ -936,8 +945,8 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         samples_details = self._get_samples_details()
         for curr_sample_name, curr_sample_details in samples_details.items():
             curr_sample_project = curr_sample_details[SAMPLE_PROJECT_KEY]
-            results[curr_sample_project][SAMPLES_KEY][curr_sample_name] = \
-                curr_sample_details
+            results[curr_sample_project][SAMPLES_DETAILS_KEY][
+                curr_sample_name] = curr_sample_details
         # next sample
 
         return results

@@ -8,11 +8,11 @@ import pandas as pd
 import sample_sheet
 from json import loads
 
-from metapool.literals import (QIITA_ID_KEY, PROJECT_SHORT_NAME_KEY,
-                               PROJECT_FULL_NAME_KEY, CONTAINS_REPLICATES_KEY,
-                               SAMPLES_KEY, SAMPLE_PROJECT_KEY, ORIG_NAME_KEY,
-                               SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY,
-                               PRIMARY_STUDY_KEY, SECONDARY_STUDIES_KEY)
+from metapool.mp_strings import (
+    QIITA_ID_KEY, PROJECT_SHORT_NAME_KEY, PROJECT_FULL_NAME_KEY,
+    CONTAINS_REPLICATES_KEY, SAMPLES_DETAILS_KEY, SAMPLE_PROJECT_KEY,
+    ORIG_NAME_KEY, SAMPLE_NAME_KEY, SAMPLE_TYPE_KEY, PRIMARY_STUDY_KEY,
+    SECONDARY_STUDIES_KEY)
 from metapool.metapool import TUBECODE_KEY
 from metapool.sample_sheet import (KLSampleSheet, AmpliconSampleSheet,
                                    MetagenomicSampleSheetv101,
@@ -26,6 +26,7 @@ from metapool.sample_sheet import (KLSampleSheet, AmpliconSampleSheet,
                                    demux_sample_sheet, sheet_needs_demuxing,
                                    make_sections_dict, SS_SAMPLE_ID_KEY)
 from metapool.plate import ErrorMessage, WarningMessage
+from metapool.metapool import generate_override_cycles_value
 
 
 # Default KLSampleSheet objects don't have a `contains_replicates`
@@ -74,6 +75,8 @@ class BaseTests(unittest.TestCase):
 
         self.bad_project_name_ss = join(data_dir,
                                         'bad-project-name-sample-sheet.csv')
+
+        self.good_run_info = "metapool/tests/data/runinfo_files/RunInfo1.xml"
 
         bfx = [
             {
@@ -598,6 +601,25 @@ class KLSampleSheetTests(BaseTests):
 
         self.assertEqual(set(obs), set(exp))
 
+    def test_set_override_cycles(self):
+        sheet = load_sample_sheet(self.good_ss)
+
+        # assert that the original value of the sheet is as expected.
+        self.assertEqual("Y151;I8N2;I8N2;Y151",
+                         sheet.Settings['OverrideCycles'])
+
+        # generate a known value that is different from above using a known
+        # sample-sheet. Assume that adapters are of length 8.
+        new_value = generate_override_cycles_value(self.good_run_info, 8)
+
+        # assert that the new value is as expected.
+        self.assertEqual("Y151;I8N4;Y151", new_value)
+
+        # use set_override_cycles() to change the value and assert that it
+        # is now different.
+        sheet.set_override_cycles(new_value)
+        self.assertEqual("Y151;I8N4;Y151", sheet.Settings['OverrideCycles'])
+
     def test_sample_is_a_blank_wo_context(self):
         sheet = MetagenomicSampleSheetv100(self.good_ss)
         # NB: the sample names and sample ids in the test spreadsheet are the
@@ -704,7 +726,7 @@ class KLSampleSheetTests(BaseTests):
                 PROJECT_SHORT_NAME_KEY: 'NYU_BMS_Melanoma',
                 PROJECT_FULL_NAME_KEY: 'NYU_BMS_Melanoma_13059',
                 CONTAINS_REPLICATES_KEY: False,
-                SAMPLES_KEY: {
+                SAMPLES_DETAILS_KEY: {
                     'LP127890A01': {
                         SAMPLE_NAME_KEY: 'LP127890A01',
                         SAMPLE_PROJECT_KEY: 'NYU_BMS_Melanoma_13059',
@@ -717,7 +739,7 @@ class KLSampleSheetTests(BaseTests):
                 PROJECT_SHORT_NAME_KEY: 'Feist',
                 PROJECT_FULL_NAME_KEY: 'Feist_11661',
                 CONTAINS_REPLICATES_KEY: False,
-                SAMPLES_KEY: {
+                SAMPLES_DETAILS_KEY: {
                     'CDPH-SAL_Salmonella_Typhi_MDL-143': {
                         SAMPLE_NAME_KEY: 'CDPH-SAL_Salmonella_Typhi_MDL-143',
                         SAMPLE_PROJECT_KEY: 'Feist_11661',
@@ -730,7 +752,7 @@ class KLSampleSheetTests(BaseTests):
                 PROJECT_SHORT_NAME_KEY: 'Gerwick',
                 PROJECT_FULL_NAME_KEY: 'Gerwick_6123',
                 CONTAINS_REPLICATES_KEY: False,
-                SAMPLES_KEY: {
+                SAMPLES_DETAILS_KEY: {
                     '3A': {
                         SAMPLE_NAME_KEY: '3A',
                         SAMPLE_PROJECT_KEY: 'Gerwick_6123',
@@ -753,7 +775,7 @@ class KLSampleSheetTests(BaseTests):
         # make sure the original name is being added correctly
         obs_details = sheet.get_projects_details()
         self.assertTrue("Feist_11661" in obs_details)
-        an_obs_samples = obs_details["Feist_11661"][SAMPLES_KEY]
+        an_obs_samples = obs_details["Feist_11661"][SAMPLES_DETAILS_KEY]
         self.assertTrue("BLANK.43.12G.A1" in an_obs_samples)
         an_obs_sample = an_obs_samples["BLANK.43.12G.A1"]
         self.assertTrue(ORIG_NAME_KEY in an_obs_sample)
@@ -1549,6 +1571,11 @@ class SampleSheetWorkflow(BaseTests):
                 {'Sample_Project': 'Study_3', 'Email': 'c@ucsd.edu'},
                 {'Sample_Project': 'Study_4', 'Email': 'b@ucsd.edu'}
             ],
+
+            # when there are multiple secondary studies, they are delimited
+            # by a ";" (no spaces).  When there are NO secondary studies,
+            # the value of the `secondary_qiita_studies` key is an empty string
+            # (NOT a None).
             'SampleContext': [
                 {'sample_name': 'sample1', 'primary_qiita_study': '1',
                  'sample_type': 'control blank',
