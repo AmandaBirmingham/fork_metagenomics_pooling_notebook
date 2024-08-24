@@ -2407,14 +2407,14 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         sheet1 = load_sample_sheet(self.katharoseq_1)
         # confirm that the sheet is of the new karathoseq-enabled type.
         self.assertEqual(type(sheet1), MetagenomicSampleSheetv101)
-        obs = sheet1._get_expected_columns()
+        obs = sheet1._get_expected_data_columns()
 
         # because sheet1 does not contain karathoseq samples, it should not
         # contain additional karathoseq-specific columns.
-        exp = ['Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
+        exp = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
                'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
                'Sample_Project',
-               'Well_description']
+               'Well_description')
         self.assertEqual(obs, exp)
         self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
 
@@ -2422,13 +2422,13 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         # section, and perform similar tests.
         sheet2 = load_sample_sheet(self.katharoseq_2)
         self.assertEqual(type(sheet2), MetagenomicSampleSheetv101)
-        exp = ['Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
+        exp = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
                'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
                'Sample_Project', 'Well_description', 'Kathseq_RackID',
                TUBECODE_KEY, 'katharo_description', 'number_of_cells',
                'platemap_generation_date', 'project_abbreviation',
-               'vol_extracted_elution_ul', 'well_id_96']
-        obs = sheet2._get_expected_columns()
+               'vol_extracted_elution_ul', 'well_id_96')
+        obs = sheet2._get_expected_data_columns()
 
         self.assertEqual(obs, exp)
         self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
@@ -2438,11 +2438,11 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         # only the shorter set of columns.
         sheet1 = load_sample_sheet(self.katharoseq_1)
         self.assertEqual(type(sheet1), MetagenomicSampleSheetv101)
-        exp = ['Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
+        exp = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
                'I7_Index_ID', 'index', 'I5_Index_ID', 'index2',
                'Sample_Project',
-               'Well_description']
-        obs = sheet1._get_expected_columns()
+               'Well_description')
+        obs = sheet1._get_expected_data_columns()
         self.assertEqual(obs, exp)
         self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
 
@@ -2463,9 +2463,9 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         # confirm type is katharoseq-enabled.
         self.assertEqual(type(sheet), MetagenomicSampleSheetv101)
 
-        # Note: _get_expected_columns() returns what columns the sample-sheet
+        # Note: _get_expected_data_columns() returns what columns the sample-sheet
         # SHOULD have.
-        self.assertIn('number_of_cells', sheet._get_expected_columns())
+        self.assertIn('number_of_cells', sheet._get_expected_data_columns())
 
         # confirm validate_and_scrub_sample_sheet() returns False.
         self.assertFalse(sheet.validate_and_scrub_sample_sheet())

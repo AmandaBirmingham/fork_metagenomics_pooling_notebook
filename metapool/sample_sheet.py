@@ -71,7 +71,7 @@ _BASE_BIOINFORMATICS_COLS = MappingProxyType(
      EXPT_DESIGN_DESC_KEY: str
      })
 _BIOINFORMATICS_COLS_W_REP_SUPPORT = MappingProxyType(
-    _BASE_BIOINFORMATICS_COLS.copy() | {CONTAINS_REPLICATES_KEY: bool})
+    _BASE_BIOINFORMATICS_COLS | {CONTAINS_REPLICATES_KEY: bool})
 _CONTACT_COLS = MappingProxyType({
     _SS_SAMPLE_PROJECT_KEY: str,
     _EMAIL_KEY: str})
@@ -79,16 +79,16 @@ _CONTACT_COLS = MappingProxyType({
 # Note that there doesn't appear to be a difference between 95, 99, and 100
 # beyond the value observed in 'Well_description' column. The real
 # difference is between standard_metag and abs_quant_metag.
-_BASE_DATA_COLUMNS = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
+_BASE_DATA_COLUMNS = (SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
                       'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                      'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description']
+                      'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
 
-_BASE_CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+_BASE_CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                               'i7_index_id', 'index', 'index2',
                               'library_construction_protocol',
                               SAMPLE_NAME_KEY, 'sample_plate',
                               'sample_project', 'well_description',
-                              'well_id_384']
+                              'well_id_384')
 
 _ELUTION_VOL_KEY = 'vol_extracted_elution_ul'
 
@@ -145,6 +145,12 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     _ALL_METADATA = {**_HEADER, **_SETTINGS, **_READS,
                      **_BIOINFORMATICS_AND_CONTACT}
 
+    # TODO: Would love to know if this is being used outside this module or not
+    #  and if not would love to rename it, as the underlying Illumina-code
+    #  SampleSheet object has a `_sections` attribute, which is a little too
+    #  close for comfort (also, the sheet's `add_section()` method adds to
+    #  *that* attribute, but one might be forgiven for guessing it would add
+    #  to this one ...
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY)
 
@@ -152,22 +158,30 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     'Sample_Well', 'I7_Index_ID', 'index', 'I5_Index_ID',
                     'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
 
-    column_alts = {'well_description': 'Well_description',
-                   'description': 'Well_description',
-                   'Description': 'Well_description',
-                   'sample_plate': 'Sample_Plate'}
+    _column_alts = {'well_description': 'Well_description',
+                    'description': 'Well_description',
+                    'Description': 'Well_description',
+                    'sample_plate': 'Sample_Plate'}
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
-                            'i7_index_id', 'index', 'index2',
-                            'library_construction_protocol',
-                            SAMPLE_NAME_KEY,
-                            'sample_plate', 'sample_project',
-                            'well_description', 'Sample_Well', 'Lane']
+    _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+                             'i7_index_id', 'index', 'index2',
+                             'library_construction_protocol',
+                             SAMPLE_NAME_KEY,
+                             'sample_plate', 'sample_project',
+                             'well_description', 'Sample_Well', 'Lane')
 
-    GENERATED_PREP_COLUMNS = ['center_name', 'center_project_name',
-                              'instrument_model', 'lane', 'platform',
-                              'run_center', 'run_date', 'run_prefix', 'runid',
-                              'sequencing_meth']
+    _GENERATED_PREP_COLUMNS = ('center_name', 'center_project_name',
+                               'instrument_model', 'lane', 'platform',
+                               'run_center', 'run_date', 'run_prefix', 'runid',
+                               'sequencing_meth')
+
+    @property
+    def CARRIED_PREP_COLUMNS(self):
+        return list(self._CARRIED_PREP_COLUMNS)
+
+    @property
+    def GENERATED_PREP_COLUMNS(self):
+        return list(self._GENERATED_PREP_COLUMNS)
 
     def __new__(cls, path=None, *args, **kwargs):
         """
@@ -212,7 +226,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         # don't pass the path argument to avoid the superclass from parsing
         # the data.
         super().__init__()
-        self.remapper = None
+        self._remapper = None
 
         self.Bioinformatics = None
         self.Contact = None
@@ -332,6 +346,10 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                     section[key] = value
                     continue
 
+    def _extend_remapper(self, addtl_remapper):
+        curr_remapper = getattr(self, '_remapper', {})
+        return MappingProxyType(curr_remapper | addtl_remapper)
+
     def set_override_cycles(self, value):
         # assume that any value including None is valid.
         # None should be silently converted to empty string as a truly
@@ -343,9 +361,9 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
     def _process_section_header(self, columns):
         for i in range(0, len(columns)):
-            if columns[i] in KLSampleSheet.column_alts:
+            if columns[i] in KLSampleSheet._column_alts:
                 # overwrite existing alternate name w/internal representation.
-                columns[i] = KLSampleSheet.column_alts[columns[i]]
+                columns[i] = KLSampleSheet._column_alts[columns[i]]
         return columns
 
     def write(self, handle, blank_lines=1) -> None:
@@ -477,19 +495,19 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         result = table.copy(deep=True)
 
         if strict:
-            # All columns not defined in remapper will be filtered result.
-            result = table[self.remapper.keys()].copy()
-            result.rename(self.remapper, axis=1, inplace=True)
+            # All columns not defined in _remapper will be filtered result.
+            result = table[self._remapper.keys()].copy()
+            result.rename(self._remapper, axis=1, inplace=True)
         else:
             # if a column named 'index' is present in table, assume it is a
             # numeric index and not a sequence of bases, which is required in
             # the output. Assume the column that will become 'index' is
-            # defined in remapper.
+            # defined in _remapper.
             if 'index' in set(result.columns):
                 result.drop(columns=['index'], inplace=True)
 
-            remapper = KLSampleSheet.column_alts | self.remapper
-            result.rename(remapper, axis=1, inplace=True)
+            _remapper = KLSampleSheet._column_alts | self._remapper
+            result.rename(_remapper, axis=1, inplace=True)
 
             # result may contain additional columns that aren't allowed in the
             # [Data] section of a sample-sheet e.g.: 'Extraction Kit Lot'.
@@ -501,14 +519,14 @@ class KLSampleSheet(sample_sheet.SampleSheet):
             # defined in each sample-sheet version. For newer classes, this is
             # defined at run-time and requires examining the metadata that
             # will define the [Data] section.
-            required_columns = self._get_expected_columns(table=result)
+            required_columns = self._get_expected_data_columns(table=result)
             subset = list(set(required_columns) & set(result.columns))
             result = result[subset]
 
         return result
 
     def _add_data_to_sheet(self, table, sequencer, lanes, assay, strict=True):
-        if self.remapper is None:
+        if self._remapper is None:
             raise ValueError("sample-sheet does not contain a valid Assay"
                              " type.")
 
@@ -522,7 +540,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         table['Well_description'] = well_description
 
-        for column in self._get_expected_columns():
+        for column in self._get_expected_data_columns():
             if column not in table.columns:
                 warnings.warn('The column %s in the sample sheet is empty' %
                               column)
@@ -635,7 +653,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         return int(lanes[0])
 
-    def _get_expected_columns(self, table=None):
+    def _get_expected_data_columns(self, table=None):
         # this base (general) implementation of this method does nothing w/
         # the table parameter. It is present only for compatibility with child
         # methods.
@@ -686,7 +704,7 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         # we print an error return None and exit when this happens otherwise
         # we won't be able to run other checks
-        for column in self._get_expected_columns():
+        for column in self._get_expected_data_columns():
             if column not in self.all_sample_keys:
                 msgs.append(ErrorMessage(f'The {column} column in the '
                                          f'{_DATA_KEY} section is missing'))
@@ -1110,22 +1128,18 @@ class KLSampleSheetWithSampleContext(KLSampleSheet):
         # it is defined here first.
         self.SampleContext = None
         super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER.copy()
-        self._data_columns = _BASE_DATA_COLUMNS.copy()
-        self._CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
-
-    @property
-    def CARRIED_PREP_COLUMNS(self):
-        return self._CARRIED_PREP_COLUMNS
+        self._remapper = _BASE_METAG_REMAPPER
+        self._data_columns = _BASE_DATA_COLUMNS
+        self._CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS
 
 
 class AbsQuantMixin(object):
     _ABS_SYNDNA_INPUT_MASS_KEY = 'mass_syndna_input_ng'
     _ABS_GDNA_CONC_KEY = 'extracted_gdna_concentration_ng_ul'
     _ABS_SYNDNA_POOL_NUM_KEY = 'syndna_pool_number'
-    _ABSQUANT_SPECIFIC_COLUMNS = [
+    _ABSQUANT_SPECIFIC_COLUMNS = (
         _ABS_SYNDNA_INPUT_MASS_KEY, _ABS_GDNA_CONC_KEY,
-        _ELUTION_VOL_KEY, _ABS_SYNDNA_POOL_NUM_KEY]
+        _ELUTION_VOL_KEY, _ABS_SYNDNA_POOL_NUM_KEY)
 
     _ABSQUANT_REMAPPER = MappingProxyType(
         _BASE_METAG_REMAPPER | {
@@ -1137,17 +1151,15 @@ class AbsQuantMixin(object):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        curr_remapper = getattr(self, 'remapper', {})
-        self.remapper = curr_remapper | self._ABSQUANT_REMAPPER
+        self._remapper = self._extend_remapper(self._ABSQUANT_REMAPPER)
         self._data_columns = \
             self._data_columns + self._ABSQUANT_SPECIFIC_COLUMNS
-        self._CARRIED_PREP_COLUMNS = self.CARRIED_PREP_COLUMNS + \
+        self._CARRIED_PREP_COLUMNS = self._CARRIED_PREP_COLUMNS + \
                                      self._ABSQUANT_SPECIFIC_COLUMNS
 
 
-
 # NB: Must be mixed in to something that inherits from KLSampleSheetWithContext
-# since it relies on having self.remapper set in the super's __init__, and on
+# since it relies on having self._remapper set in the super's __init__, and on
 # the `samples` and `data_columns` attributes
 class KatharoseqMixin(object):
     _KATH_RACK_ID_KEY = 'Kathseq_RackID'
@@ -1155,12 +1167,12 @@ class KatharoseqMixin(object):
 
     # columns present in a pre-prep file (amplicon) that included katharoseq
     # controls. Presumably we will need these same columns in a sample-sheet.
-    optional_katharoseq_columns = [_KATH_RACK_ID_KEY, TUBECODE_KEY,
-                                   'katharo_description',
-                                   'number_of_cells',
-                                   'platemap_generation_date',
-                                   'project_abbreviation',
-                                   _ELUTION_VOL_KEY, 'well_id_96']
+    _optional_katharoseq_columns = (_KATH_RACK_ID_KEY, TUBECODE_KEY,
+                                    'katharo_description',
+                                    'number_of_cells',
+                                    'platemap_generation_date',
+                                    'project_abbreviation',
+                                    _ELUTION_VOL_KEY, 'well_id_96')
 
     @staticmethod
     def _is_katharo_name(sample_name):
@@ -1168,7 +1180,8 @@ class KatharoseqMixin(object):
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper[self._KATH_RACK_ID_KEY] = self._KATH_RACK_ID_KEY
+        self._remapper = self._extend_remapper(
+            {self._KATH_RACK_ID_KEY: self._KATH_RACK_ID_KEY})
 
     def contains_katharoseq_samples(self):
         # when creating samples manually, as opposed to loading a sample-sheet
@@ -1194,20 +1207,21 @@ class KatharoseqMixin(object):
         is_katharos = table[_SS_SAMPLE_NAME_KEY].apply(self._is_katharo_name)
         return is_katharos.any()
 
-    def _get_expected_columns(self, table=None):
+    def _get_expected_data_columns(self, table=None):
         if table is None:
             # if [Data] section contains katharoseq samples, add the expected
             # additional katharoseq columns to the official list of expected
             # columns before validation or other processing begins.
             if self.contains_katharoseq_samples():
-                return self._data_columns + self.optional_katharoseq_columns
+                return self._data_columns + self._optional_katharoseq_columns
+
         else:
             # assume that there are no samples added to this object yet. This
             # means that self.contains_katharoseq_samples() will always return
             # False. Assume table contains a list of samples that may or may
             # not contain katharoseq controls.
             if self._table_contains_katharoseq_samples(table):
-                return self._data_columns + self.optional_katharoseq_columns
+                return self._data_columns + self._optional_katharoseq_columns
 
         return self._data_columns
 
@@ -1228,16 +1242,16 @@ class AmpliconSampleSheet(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+    _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                             'i7_index_id', 'index', 'index2',
                             'library_construction_protocol',
                             SAMPLE_NAME_KEY,
                             'sample_plate', 'sample_project',
-                            'well_description', 'Sample_Well']
+                            'well_description', 'Sample_Well')
 
     def __init__(self, path=None):
         super().__init__(path)
-        self.remapper = {
+        self._remapper = {
             'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
             'Sample': _SS_SAMPLE_NAME_KEY,
             PM_PROJECT_PLATE_KEY: 'Sample_Plate',
@@ -1276,23 +1290,23 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
     # Note that there doesn't appear to be a difference between 95, 99, and 100
     # beyond the value observed in 'Well_description' column. The real
     # difference is between standard_metag and abs_quant_metag.
-    _data_columns = _BASE_DATA_COLUMNS.copy()
+    _data_columns = _BASE_DATA_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+    _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                             'i7_index_id', 'index', 'index2',
                             'library_construction_protocol',
                             SAMPLE_NAME_KEY,
                             'sample_plate', 'sample_project',
-                            'well_description', 'well_id_384']
+                            'well_description', 'well_id_384')
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER.copy()
+        self._remapper = _BASE_METAG_REMAPPER
 
 
 class MetagenomicSampleSheetv90(KLSampleSheet):
@@ -1300,7 +1314,7 @@ class MetagenomicSampleSheetv90(KLSampleSheet):
     MetagenomicSampleSheetv90 is meant to be a class to handle legacy
     Metagenomic type sample-sheets, since KLSampleSheet() itself can't be
     instantiated anymore. What makes it unique is that it specifies a version
-    number and defines the classic values for self.remapper.
+    number and defines the classic values for self._remapper.
     """
     _HEADER = {
         'IEMFileVersion': '4',
@@ -1318,16 +1332,16 @@ class MetagenomicSampleSheetv90(KLSampleSheet):
 
     # data_columns are the same as base KLSampleSheet so they will not be
     # overridden here. _BIOINFORMATICS_COLUMNS as well.
-    CARRIED_PREP_COLUMNS = [EXPT_DESIGN_DESC_KEY, 'i5_index_id',
+    _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                             'i7_index_id', 'index', 'index2',
                             'library_construction_protocol',
                             SAMPLE_NAME_KEY,
                             'sample_plate', 'sample_project',
-                            'well_description', 'Sample_Well']
+                            'well_description', 'Sample_Well')
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = {
+        self._remapper = {
             'sample sheet Sample_ID': SS_SAMPLE_ID_KEY,
             'Sample': _SS_SAMPLE_NAME_KEY,
             PM_PROJECT_PLATE_KEY: 'Sample_Plate',
@@ -1355,20 +1369,20 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    _data_columns = _BASE_DATA_COLUMNS + \
-                   AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
+    _data_columns = \
+        _BASE_DATA_COLUMNS + AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS + \
-                           AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
+    _CARRIED_PREP_COLUMNS =\
+        _BASE_CARRIED_PREP_COLUMNS + AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = AbsQuantMixin._ABSQUANT_REMAPPER
+        self._remapper = AbsQuantMixin._ABSQUANT_REMAPPER
 
 
 class AbsQuantSampleSheetv11(AbsQuantMixin, KLSampleSheetWithSampleContext):
@@ -1392,18 +1406,18 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
         'Chemistry': 'Default',
     }
 
-    _data_columns = _BASE_DATA_COLUMNS.copy()
+    _data_columns = _BASE_DATA_COLUMNS
 
     _KL_ADDTL_DF_SECTIONS = {
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
     }
 
-    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy()
+    _CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = _BASE_METAG_REMAPPER.copy()
+        self._remapper = _BASE_METAG_REMAPPER
 
 
 class MetatranscriptomicSampleSheetv10(KLSampleSheet):
@@ -1426,23 +1440,22 @@ class MetatranscriptomicSampleSheetv10(KLSampleSheet):
     # (Sample_Plate + Sample_Name + well_id_384) vs. just the sample_name
     # in previous iterations.
 
-    _data_columns = [SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
+    _data_columns = (SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
                     'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
                     'index2', _SS_SAMPLE_PROJECT_KEY,
                     'total_rna_concentration_ng_ul',
-                    _ELUTION_VOL_KEY, 'Well_description']
+                    _ELUTION_VOL_KEY, 'Well_description')
 
-    CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS.copy() + [
+    _CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS + (
                             'total_rna_concentration_ng_ul',
-                            _ELUTION_VOL_KEY]
+                            _ELUTION_VOL_KEY)
 
     def __init__(self, path=None):
         super().__init__(path=path)
-        self.remapper = MappingProxyType(
-            _BASE_METAG_REMAPPER.copy() | {
+        self._remapper = _BASE_METAG_REMAPPER | {
                 'Sample RNA Concentration': 'total_rna_concentration_ng_ul',
                 _ELUTION_VOL_KEY: _ELUTION_VOL_KEY
-            })
+            }
 
 
 def load_sample_sheet(sample_sheet_path):
