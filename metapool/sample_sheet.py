@@ -38,11 +38,11 @@ _HUMAN_FILTERING_KEY = 'HumanFiltering'
 _SHEET_TYPE_KEY = 'SheetType'
 _SHEET_VERSION_KEY = 'SheetVersion'
 
+STANDARD_METAG_SHEET_TYPE = 'standard_metag'
+STANDARD_METAT_SHEET_TYPE = 'standard_metat'
+ABSQUANT_SHEET_TYPE = 'abs_quant_metag'
 _AMPLICON = 'TruSeq HT'
-_STANDARD_METAG_SHEET_TYPE = 'standard_metag'
-_STANDARD_METAT_SHEET_TYPE = 'standard_metat'
 _DUMMY_SHEET_TYPE = 'dummy_amp'
-_ABSQUANT_SHEET_TYPE = 'abs_quant_metag'
 _PLACEHOLDER_EXPT_NAME = 'RKL_experiment'
 
 # NB: These two string literals are assigned to (totally independent) public
@@ -154,9 +154,14 @@ class KLSampleSheet(sample_sheet.SampleSheet):
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY)
 
+    # NB: Inside `make_sample_sheet`, the 'Well_description' column is
+    # (over)written by concatenating project plate, sample, and well.
+    # So it is required in the sense that it has to be present in the sample
+    # sheet, but it is not required in the sense that it has to be provided
+    # by a user when they create a sample sheet through this module.
     _data_columns = (SS_SAMPLE_ID_KEY, _SS_SAMPLE_NAME_KEY, 'Sample_Plate',
-                    'Sample_Well', 'I7_Index_ID', 'index', 'I5_Index_ID',
-                    'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
+                     'Sample_Well', 'I7_Index_ID', 'index', 'I5_Index_ID',
+                     'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
 
     _column_alts = {'well_description': 'Well_description',
                     'description': 'Well_description',
@@ -1267,7 +1272,7 @@ class MetagenomicSampleSheetv101(
     # Adds support for optional KATHAROSEQ columns in [Data] section.
 
     _HEADER = KLSampleSheet._HEADER.copy()
-    _HEADER[_SHEET_TYPE_KEY] = _STANDARD_METAG_SHEET_TYPE
+    _HEADER[_SHEET_TYPE_KEY] = STANDARD_METAG_SHEET_TYPE
     _HEADER[_SHEET_VERSION_KEY] = '101'
     _HEADER[_ASSAY_KEY] = _METAGENOMIC
 
@@ -1275,7 +1280,7 @@ class MetagenomicSampleSheetv101(
 class MetagenomicSampleSheetv100(KLSampleSheet):
     _HEADER = {
         'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAG_SHEET_TYPE,
+        _SHEET_TYPE_KEY: STANDARD_METAG_SHEET_TYPE,
         _SHEET_VERSION_KEY: '100',
         'Investigator Name': 'Knight',
         _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
@@ -1318,7 +1323,7 @@ class MetagenomicSampleSheetv90(KLSampleSheet):
     """
     _HEADER = {
         'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAG_SHEET_TYPE,
+        _SHEET_TYPE_KEY: STANDARD_METAG_SHEET_TYPE,
         _SHEET_VERSION_KEY: '90',
         'Investigator Name': 'Knight',
         _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
@@ -1357,7 +1362,7 @@ class MetagenomicSampleSheetv90(KLSampleSheet):
 class AbsQuantSampleSheetv10(KLSampleSheet):
     _HEADER = {
         'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _ABSQUANT_SHEET_TYPE,
+        _SHEET_TYPE_KEY: ABSQUANT_SHEET_TYPE,
         _SHEET_VERSION_KEY: '10',
         'Investigator Name': 'Knight',
         _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
@@ -1387,14 +1392,14 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
 
 class AbsQuantSampleSheetv11(AbsQuantMixin, KLSampleSheetWithSampleContext):
     _HEADER = AbsQuantSampleSheetv10._HEADER.copy()
-    _HEADER[_SHEET_TYPE_KEY] = _ABSQUANT_SHEET_TYPE
+    _HEADER[_SHEET_TYPE_KEY] = ABSQUANT_SHEET_TYPE
     _HEADER[_SHEET_VERSION_KEY] = '11'
 
 
 class MetatranscriptomicSampleSheetv0(KLSampleSheet):
     _HEADER = {
         'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAG_SHEET_TYPE,
+        _SHEET_TYPE_KEY: STANDARD_METAG_SHEET_TYPE,
         _SHEET_VERSION_KEY: '0',
         'Investigator Name': 'Knight',
         _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
@@ -1423,7 +1428,7 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
 class MetatranscriptomicSampleSheetv10(KLSampleSheet):
     _HEADER = {
         'IEMFileVersion': '4',
-        _SHEET_TYPE_KEY: _STANDARD_METAT_SHEET_TYPE,
+        _SHEET_TYPE_KEY: STANDARD_METAT_SHEET_TYPE,
         _SHEET_VERSION_KEY: '10',
         'Investigator Name': 'Knight',
         _EXPERIMENT_NAME_KEY: _PLACEHOLDER_EXPT_NAME,
@@ -1497,7 +1502,7 @@ def load_sample_sheet(sample_sheet_path):
 
 
 def _create_sample_sheet(sheet_type, sheet_version, assay_type):
-    if sheet_type == _STANDARD_METAG_SHEET_TYPE:
+    if sheet_type == STANDARD_METAG_SHEET_TYPE:
         if assay_type == _METAGENOMIC:
             if sheet_version == '101':
                 sheet = MetagenomicSampleSheetv101()
@@ -1513,7 +1518,7 @@ def _create_sample_sheet(sheet_type, sheet_version, assay_type):
             sheet = MetatranscriptomicSampleSheetv0()
         else:
             raise ValueError("'%s' is an unrecognized Assay type" % assay_type)
-    elif sheet_type == _STANDARD_METAT_SHEET_TYPE:
+    elif sheet_type == STANDARD_METAT_SHEET_TYPE:
         if assay_type == _METATRANSCRIPTOMIC:
             if sheet_version == '0':
                 sheet = MetatranscriptomicSampleSheetv0()
@@ -1524,7 +1529,7 @@ def _create_sample_sheet(sheet_type, sheet_version, assay_type):
                                  f"Version for '{sheet_type}'")
         else:
             raise ValueError("'%s' is an unrecognized Assay type" % assay_type)
-    elif sheet_type == _ABSQUANT_SHEET_TYPE:
+    elif sheet_type == ABSQUANT_SHEET_TYPE:
         sheet = AbsQuantSampleSheetv10()
     elif sheet_type == _DUMMY_SHEET_TYPE:
         sheet = AmpliconSampleSheet()
@@ -1534,7 +1539,7 @@ def _create_sample_sheet(sheet_type, sheet_version, assay_type):
     return sheet
 
 
-def make_sample_sheet(metadata, table, sequencer, lanes, strict=True):
+def make_sample_sheet(metadata, table, sequencer, lanes, strict=None):
     """Write a valid sample sheet
 
     Parameters
@@ -1609,6 +1614,14 @@ def make_sample_sheet(metadata, table, sequencer, lanes, strict=True):
     messages = sheet._validate_sample_sheet_metadata(metadata)
 
     if len(messages) == 0:
+        # if the user did not *explicitly* set the strict value
+        if strict is None:
+            # TODO: this is a temporary measure. Katharoseq-enabled sample
+            #  sheets may or may *not* have katharoseq controls, and if they
+            #  don't, they fail during adding, even though they are legal.
+            strict = getattr(
+                sheet, 'contains_katharoseq_samples', None) is None
+
         sheet._add_metadata_to_sheet(metadata, sequencer)
         sheet._add_data_to_sheet(table, sequencer, lanes, metadata[_ASSAY_KEY],
                                  strict)

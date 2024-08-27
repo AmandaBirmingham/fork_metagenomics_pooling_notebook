@@ -2653,6 +2653,22 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
                        'Lane'}
         self.assertEqual(obs_columns, exp_columns)
 
+    def test_katharoseq_make_sample_sheet_implicit_not_strict(self):
+        table = pd.DataFrame(columns=self.input_columns, data=self.data)
+        sheet = make_sample_sheet(self.metadata, table, 'iSeq', [1])
+
+        # confirm that we get a sample-sheet w/out katharoseq-control-related
+        # columns.
+        self.assertIsNotNone(sheet)
+        self.assertIsInstance(sheet, MetagenomicSampleSheetv101)
+        self.assertFalse(sheet.contains_katharoseq_samples())
+        obs_columns = set(sheet.samples[0].to_json().keys())
+        exp_columns = {'Sample_ID', 'Sample_Name', 'Sample_Plate',
+                       'well_id_384', 'I7_Index_ID', 'index', 'I5_Index_ID',
+                       'index2', 'Sample_Project', 'Well_description',
+                       'Lane'}
+        self.assertEqual(obs_columns, exp_columns)
+
     def test_katharoseq_make_sample_sheet_one_optional_column_ok(self):
         self.input_columns.append('Kathseq_RackID')
         self.data[0].append('MyRackID')
