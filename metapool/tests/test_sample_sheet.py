@@ -1745,8 +1745,10 @@ class ValidateSampleSheetTests(BaseTests):
             sample['Sample_Project'] = remapper.get(sample['Sample_Project'],
                                                     sample['Sample_Project'])
 
-        sheet.Contact.Sample_Project.replace(remapper, inplace=True)
-        sheet.Bioinformatics.Sample_Project.replace(remapper, inplace=True)
+        # new pandas won't let you set value inplace on a slice
+        project_remapper = {'Sample_Project': remapper}
+        sheet.Contact.replace(project_remapper, inplace=True)
+        sheet.Bioinformatics.replace(project_remapper, inplace=True)
 
         sheet.validate_and_scrub_sample_sheet()
 

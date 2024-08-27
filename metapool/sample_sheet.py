@@ -107,17 +107,17 @@ _BASE_METAG_REMAPPER = MappingProxyType({
 
 class KLSampleSheet(sample_sheet.SampleSheet):
     _ASSAYS = frozenset({_AMPLICON, _METAGENOMIC, _METATRANSCRIPTOMIC})
-    _BIOINFORMATICS_AND_CONTACT = {
+    _BIOINFORMATICS_AND_CONTACT = MappingProxyType({
         _BIOINFORMATICS_KEY: None,
         _CONTACT_KEY: None
-    }
+    })
 
-    _KL_ADDTL_DF_SECTIONS = {
+    _KL_ADDTL_DF_SECTIONS = MappingProxyType({
         _BIOINFORMATICS_KEY: _BASE_BIOINFORMATICS_COLS,
         _CONTACT_KEY: _CONTACT_COLS,
-    }
+    })
 
-    _HEADER = {
+    _HEADER = MappingProxyType({
         'IEMFileVersion': '4',
         _SHEET_TYPE_KEY: None,
         _SHEET_VERSION_KEY: None,
@@ -129,21 +129,21 @@ class KLSampleSheet(sample_sheet.SampleSheet):
         _ASSAY_KEY: None,
         'Description': '',
         'Chemistry': 'Default',
-    }
+    })
 
-    _READS = {
+    _READS = MappingProxyType({
         'Read1': 151,
         'Read2': 151
-    }
+    })
 
-    _SETTINGS = {
+    _SETTINGS = MappingProxyType({
         'ReverseComplement': '0',
         'MaskShortReads': '1',
         'OverrideCycles': 'Y151;I8N2;I8N2;Y151'
-    }
+    })
 
-    _ALL_METADATA = {**_HEADER, **_SETTINGS, **_READS,
-                     **_BIOINFORMATICS_AND_CONTACT}
+    _ALL_METADATA = MappingProxyType({**_HEADER, **_SETTINGS, **_READS,
+                     **_BIOINFORMATICS_AND_CONTACT})
 
     # TODO: Would love to know if this is being used outside this module or not
     #  and if not would love to rename it, as the underlying Illumina-code
@@ -163,10 +163,10 @@ class KLSampleSheet(sample_sheet.SampleSheet):
                      'Sample_Well', 'I7_Index_ID', 'index', 'I5_Index_ID',
                      'index2', _SS_SAMPLE_PROJECT_KEY, 'Well_description')
 
-    _column_alts = {'well_description': 'Well_description',
-                    'description': 'Well_description',
-                    'Description': 'Well_description',
-                    'sample_plate': 'Sample_Plate'}
+    _column_alts = MappingProxyType({'well_description': 'Well_description',
+                   'description': 'Well_description',
+                   'Description': 'Well_description',
+                   'sample_plate': 'Sample_Plate'})
 
     _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                              'i7_index_id', 'index', 'index2',
@@ -625,6 +625,10 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
         # Note: 'iseq' should remain at the tail of this list, since it
         # is a substring of the others.
+        # TODO: It makes me super nervous to have this list here and to also
+        #  have the OTHER_SEQUENCERS list in metapool.metapool; I realize that
+        #  they are doing slightly different things, but there's a good chance
+        #  that if one changes, the other at least needs to be looked at.
         sequencer_types = ['novaseq', 'hiseq', 'miseq', 'miniseq', 'iseq']
         type_found = None
         for sequencer_type in sequencer_types:
@@ -1090,14 +1094,14 @@ class KLSampleSheet(sample_sheet.SampleSheet):
 
 
 class KLSampleSheetWithSampleContext(KLSampleSheet):
-    _KL_ADDTL_DF_SECTIONS = {
+    _KL_ADDTL_DF_SECTIONS = MappingProxyType({
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
         _SAMPLE_CONTEXT_KEY: SAMPLE_CONTEXT_COLS
-    }
+    })
 
-    _ALL_METADATA = KLSampleSheet._ALL_METADATA.copy()
-    _ALL_METADATA[_SAMPLE_CONTEXT_KEY] = None
+    _ALL_METADATA = MappingProxyType(
+        KLSampleSheet._ALL_METADATA | {_SAMPLE_CONTEXT_KEY: None})
 
     sections = (_HEADER_KEY, _READS_KEY, _SETTINGS_KEY, _DATA_KEY,
                 _BIOINFORMATICS_KEY, _CONTACT_KEY, _SAMPLE_CONTEXT_KEY)
@@ -1297,10 +1301,10 @@ class MetagenomicSampleSheetv100(KLSampleSheet):
     # difference is between standard_metag and abs_quant_metag.
     _data_columns = _BASE_DATA_COLUMNS
 
-    _KL_ADDTL_DF_SECTIONS = {
+    _KL_ADDTL_DF_SECTIONS = MappingProxyType({
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
-    }
+    })
 
     _CARRIED_PREP_COLUMNS = (EXPT_DESIGN_DESC_KEY, 'i5_index_id',
                             'i7_index_id', 'index', 'index2',
@@ -1377,12 +1381,12 @@ class AbsQuantSampleSheetv10(KLSampleSheet):
     _data_columns = \
         _BASE_DATA_COLUMNS + AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
-    _KL_ADDTL_DF_SECTIONS = {
+    _KL_ADDTL_DF_SECTIONS = MappingProxyType({
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
-    }
+    })
 
-    _CARRIED_PREP_COLUMNS =\
+    _CARRIED_PREP_COLUMNS = \
         _BASE_CARRIED_PREP_COLUMNS + AbsQuantMixin._ABSQUANT_SPECIFIC_COLUMNS
 
     def __init__(self, path=None):
@@ -1413,10 +1417,10 @@ class MetatranscriptomicSampleSheetv0(KLSampleSheet):
 
     _data_columns = _BASE_DATA_COLUMNS
 
-    _KL_ADDTL_DF_SECTIONS = {
+    _KL_ADDTL_DF_SECTIONS = MappingProxyType({
         _BIOINFORMATICS_KEY: _BIOINFORMATICS_COLS_W_REP_SUPPORT,
         _CONTACT_KEY: _CONTACT_COLS,
-    }
+    })
 
     _CARRIED_PREP_COLUMNS = _BASE_CARRIED_PREP_COLUMNS
 
@@ -1618,7 +1622,12 @@ def make_sample_sheet(metadata, table, sequencer, lanes, strict=None):
         if strict is None:
             # TODO: this is a temporary measure. Katharoseq-enabled sample
             #  sheets may or may *not* have katharoseq controls, and if they
-            #  don't, they fail during adding, even though they are legal.
+            #  don't, they fail during strict adding, even though they're legal
+            # NB: the below is duck-typing.  It isn't checking whether the
+            # sheet's data actually contains any katharoseq samples, but rather
+            # whether the sheet *itself* can check whether it
+            # contains any katharoseq samples.  If it has this ability, it
+            # needs to go through the strict=False handling.
             strict = getattr(
                 sheet, 'contains_katharoseq_samples', None) is None
 
