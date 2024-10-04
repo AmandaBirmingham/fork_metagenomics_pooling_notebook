@@ -242,7 +242,9 @@ def _calc_abs_quant_metadata(calc_df: pandas.DataFrame) -> pandas.DataFrame:
     ----------
     calc_df: pandas.DataFrame
         Dataframe containing at least the following columns:
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_G_KEY
             MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_MG_KEY,
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_G_KEY,
             MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_MG_KEY,
             DENSITY_SAMPLE_G_ML_KEY,
             MASS_STORAGE_TUBE_ONLY_G_KEY,
@@ -266,6 +268,19 @@ def _calc_abs_quant_metadata(calc_df: pandas.DataFrame) -> pandas.DataFrame:
             CALC_MASS_STORAGE_LIQUID_ALIQUOT_INPUT_G
 
     """
+
+    # ensure all the columns to be calculated on are floats
+    float_cols = [
+        MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_G_KEY,
+        MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_MG_KEY,
+        MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_G_KEY,
+        MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_MG_KEY,
+        DENSITY_SAMPLE_G_ML_KEY,
+        MASS_STORAGE_TUBE_ONLY_G_KEY,
+        VOL_HOMOGENATE_ALIQUOT_INPUT_ML_KEY,
+        DENSITY_STORAGE_LIQUID_G_ML_KEY]
+    calc_df[float_cols] = calc_df[float_cols].astype(float)
+
     # Calculate mass of sample in storage tube and mass of the storage liquid
     calc_df[CALC_MASS_SAMPLE_IN_STORAGE_TUBE_MG_KEY] = \
         calc_df[MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_MG_KEY] - \

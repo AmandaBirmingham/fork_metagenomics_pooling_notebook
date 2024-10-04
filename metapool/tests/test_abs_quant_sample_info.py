@@ -38,7 +38,7 @@ class TestAbsQuantSampleInfo(TestCase):
             MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_MG_KEY:
                 [16900.0, 15900.0],
             MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_MG_KEY:
-                [20478, 19478],
+                [20478.0, 19478.0],
             MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_G_KEY:
                 [20.478, 19.478],
             VOL_HOMOGENATE_ALIQUOT_INPUT_ML_KEY: [0.1, 0.1],
@@ -77,6 +77,64 @@ class TestAbsQuantSampleInfo(TestCase):
         expected_out_dict[STORAGE_LIQUID_LOT_NUM_STR_KEY] = \
             [str(x) for x in expected_out_dict[STORAGE_LIQUID_LOT_NUM_STR_KEY]]
         expected_out_df = pandas.DataFrame.from_dict(expected_out_dict)
+
+        curr_dir = os.path.dirname(os.path.abspath(__file__))
+        test_config_fp = os.path.join(
+            curr_dir, "data", "alt_abs_quant_sample_info_calc.yml")
+
+        input_df = pandas.DataFrame.from_dict(valid_core_input_dict)
+        output_df = add_abs_quant_metadata(
+            input_df, DENSITY_STOOL_STANDARDIZED_G_ML_KEY,
+            self.storage_liquid_type, test_config_fp)
+
+        assert_frame_equal(expected_out_df, output_df)
+
+    def test_add_abs_quant_metadata_str_inputs(self):
+        valid_core_input_dict = {
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_G_KEY:
+                ["16.9", "15.9"],
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_BEFORE_SAMPLE_MG_KEY:
+                ["16900", "15900"],
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_MG_KEY:
+                ["20478", "19478"],
+            MASS_STORAGE_TUBE_AND_STORAGE_LIQUID_AFTER_SAMPLE_G_KEY:
+                ["20.478", "19.478"],
+            VOL_HOMOGENATE_ALIQUOT_INPUT_ML_KEY: ["0.1", "0.1"],
+            VOL_HOMOGENATE_ALIQUOT_INPUT_UL_KEY: ["100", "100"],
+            STORAGE_LIQUID_LOT_NUM_STR_KEY: ["123456789", "223456789"],
+            "some_other_column_we_can_ignore": ["blue", "green"]
+        }
+
+        float_keys = list(valid_core_input_dict.keys())[:-3]
+
+        adds_dict = {
+            STORAGE_LIQUID_TYPE_KEY:
+                [self.storage_liquid_type, self.storage_liquid_type],
+            MASS_STORAGE_TUBE_ONLY_G_KEY: [7.18, 7.18],
+            DENSITY_STORAGE_LIQUID_G_ML_KEY: [1.11, 1.01],
+            DENSITY_STORAGE_LIQUID_KG_L_KEY: [1.11, 1.01],
+            DENSITY_SAMPLE_G_ML_KEY: [1.06, 1.06],
+            DENSITY_SAMPLE_KG_L_KEY: [1.06, 1.06],
+            CALC_MASS_SAMPLE_IN_STORAGE_TUBE_MG_KEY: [3578.0, 3578.0],
+            CALC_MASS_SAMPLE_IN_STORAGE_TUBE_G_KEY: [3.578, 3.578],
+            CALC_MASS_STORAGE_LIQUID_ONLY_G_KEY: [9.72, 8.72],
+            CALC_VOL_STORAGE_LIQUID_ONLY_ML_KEY: [8.756756757, 8.633663366],
+            CALC_VOL_SAMPLE_IN_STORAGE_TUBE_ML_KEY: [3.375471698, 3.375471698],
+            CALC_VOL_HOMOGENATE_IN_STORAGE_TUBE_ML_KEY:
+                [12.13222845, 12.00913506],
+            CALC_DENSITY_HOMOGENATE_G_ML_KEY: [1.096088822, 1.024053767],
+            CALC_MASS_HOMOGENATE_ALIQUOT_INPUT_G_KEY:
+                [0.109608882, 0.102405377],
+            CALC_MASS_SAMPLE_ALIQUOT_INPUT_G_KEY: [0.029491697, 0.029793986],
+            CALC_MASS_SAMPLE_ALIQUOT_INPUT_MG_KEY: [29.49169654, 29.79398583],
+            CALC_MASS_STORAGE_LIQUID_ALIQUOT_INPUT_G:
+                [0.080117186, 0.072611391]
+        }
+
+        expected_out_dict = valid_core_input_dict | adds_dict
+        expected_out_df = pandas.DataFrame.from_dict(expected_out_dict)
+
+        expected_out_df[float_keys] = expected_out_df[float_keys].astype(float)
 
         curr_dir = os.path.dirname(os.path.abspath(__file__))
         test_config_fp = os.path.join(
