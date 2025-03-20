@@ -16,7 +16,7 @@ from metapool.mp_strings import parse_project_name, \
     SYNDNA_POOL_NUM_KEY, ELUTION_VOL_KEY, EXTRACTED_GDNA_CONC_KEY
 from metapool.metapool import (bcl_scrub_name, sequencer_i5_index,
                                REVCOMP_SEQUENCERS)
-from metapool.plate import ErrorMessage, WarningMessage, PlateReplication
+from metapool.plate import ErrorMessage, WarningMessage, demux_dataframe
 from metapool.controls import SAMPLE_CONTEXT_COLS, \
     get_all_projects_in_context, is_blank, get_controls_details_from_context, \
     get_delimited_controls_details_from_compressed_plate, \
@@ -2011,26 +2011,7 @@ def _demux_sample_sheet(sheet):
 
     df = df.drop(columns=['library_construction_protocol',
                           EXPT_DESIGN_DESC_KEY])
-
-    # use PlateReplication object to convert each sample's 384 well location
-    # into a 96-well location + quadrant. Since replication is performed at
-    # the plate-level, this will identify which replicates belong in which
-    # new sample-sheet.
-    plate = PlateReplication(None)
-
-    df['quad'] = df.apply(lambda row: plate.get_96_well_location_and_quadrant(
-        row.destination_well_384)[0], axis=1)
-
-    res = []
-
-    for quad in sorted(df['quad'].unique()):
-        # for each unique quadrant found, create a new dataframe that's a
-        # subset containing only members of that quadrant. Delete the temporary
-        # 'quad' column afterwards and reset the index to an integer value
-        # starting at zero; the current-index will revert to a column named
-        # 'sample_id'. Return the list of new dataframes.
-        res.append(df[df['quad'] == quad].drop(['quad'], axis=1))
-
+    res = demux_dataframe(df)
     return res
 
 
@@ -2088,19 +2069,12 @@ def demux_sample_sheet(sheet):
         # Construct bioinformatics and contact sections for each set so that
         # projects not referenced in the sample-set are not included in the
         # Bioinformatics and Contact sections.
-        # NB: Don't handle SampleContext section here bc it is sample-, not
-        # project-specific, so needs to happen after we set the samples below.
         new_sheet.Bioinformatics = sheet.Bioinformatics.loc[
             sheet.Bioinformatics[_SS_SAMPLE_PROJECT_KEY].isin(projects)].drop(
             [CONTAINS_REPLICATES_KEY], axis=1).reset_index(drop=True)
         new_sheet.Contact = sheet.Contact.loc[
             sheet.Contact[_SS_SAMPLE_PROJECT_KEY].isin(projects)].reset_index(
             drop=True)
-
-        # Add the SampleContext section to the new sheet. This is per-sample.
-        if _SAMPLE_CONTEXT_KEY in sheet.sections:
-            new_context_df = _get_demuxed_sample_context(sheet, df)
-            new_sheet.SampleContext = new_context_df
 
         # for our purposes here, we want to reindex df so that the index
         # becomes Sample_ID and a new numeric index is created before

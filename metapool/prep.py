@@ -2,7 +2,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from glob import glob
 from metapool.mp_strings import get_short_name_and_id
-from metapool.plate import PlateReplication
+from metapool.plate import demux_dataframe
 from os import sep, listdir
 from os.path import (basename, isdir, join, split, abspath, exists,
                      normpath)
@@ -891,26 +891,7 @@ def demux_pre_prep(pre_prep):
     if not pre_prep_needs_demuxing(pre_prep):
         raise ValueError("pre_prep does not need to be demultiplexed")
 
-    # use PlateReplication object to convert each sample's 384 well location
-    # into a 96-well location + quadrant. Since replication is performed at
-    # the plate-level, this will identify which replicants belong in which
-    # new sample-sheet.
-    plate = PlateReplication(None)
-
-    pre_prep['quad'] = pre_prep.apply(lambda row:
-                                      plate.get_96_well_location_and_quadrant(
-                                          row.well_id_384)[0], axis=1)
-
-    res = []
-
-    for quad in sorted(pre_prep['quad'].unique()):
-        # for each unique quadrant found, create a new dataframe that's a
-        # subset containing only members of that quadrant. Delete the temporary
-        # 'quad' column afterwards and reset the index to an integer value
-        # starting at zero; the current-index will revert to a column named
-        # 'sample_id'. Return the list of new dataframes.
-        res.append(pre_prep[pre_prep['quad'] == quad].drop(['quad'], axis=1))
-
+    res = demux_dataframe(pre_prep)
     return res
 
 

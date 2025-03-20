@@ -9,8 +9,9 @@ from sklearn.linear_model import LogisticRegression
 from collections import OrderedDict
 from string import ascii_uppercase
 from metapool.mp_strings import EXPT_DESIGN_DESC_KEY, PM_PROJECT_NAME_KEY, \
-    PM_PROJECT_PLATE_KEY, PM_PROJECT_ABBREV_KEY, \
-    PM_COMPRESSED_PLATE_NAME_KEY, SAMPLE_DNA_CONC_KEY, EXTRACTED_GDNA_CONC_KEY
+    PM_PROJECT_PLATE_KEY, PM_PROJECT_ABBREV_KEY, PM_SAMPLE_KEY, \
+    PM_WELL_KEY, PM_COMPRESSED_PLATE_NAME_KEY, SAMPLE_DNA_CONC_KEY, \
+    EXTRACTED_GDNA_CONC_KEY, ORIG_NAME_KEY, CONTAINS_REPLICATES_KEY
 
 EXPECTED_COLUMNS = {
     'Plate Position', 'Plate map file', 'Plate elution volume',
@@ -441,6 +442,35 @@ def _autopool_norm(pool_failures, total_nmol, min_conc, sample_concs,
     return plate_df
 
 
+def demux_dataframe(combined_df):
+    quad_col = "quad"
+    per_quadrant_dataframes = []
+
+    # use PlateReplication object to convert each sample's 384 well location
+    # into a 96-well location + quadrant. Since replication is performed at
+    # the plate-level, this will identify which replicants belong in which
+    # new sample-sheet.
+    plate = PlateReplication(None)
+
+    combined_df[quad_col] = combined_df.apply(
+        lambda row: plate.get_96_well_location_and_quadrant(
+            row.well_id_384)[0],
+        axis=1)
+
+    for quad in sorted(combined_df[quad_col].unique()):
+        # for each unique quadrant found, create a new dataframe that's a
+        # subset containing only members of that quadrant. Delete the temporary
+        # 'quad' column afterward and reset the index to an integer value
+        # starting at zero; the current-index will revert to a column named
+        # 'sample_id'. Return the list of new dataframes.
+        per_quadrant_dataframes.append(
+            combined_df[combined_df[quad_col] == quad].drop(
+                [quad_col], axis=1)
+        )
+
+    return per_quadrant_dataframes
+
+
 class PlateReplication:
     STATUS_EMPTY = 'empty'
     STATUS_SOURCE = 'source'
@@ -601,7 +631,7 @@ class PlateReplication:
         # if there are wells in the prospective destination quadrant that are
         # already occupied in plate_384, raise an Error.
         dst_wells = self._get_all_384_locations(str(dst_quad))
-        occupied = plate_384.loc[plate_384['Well'].isin(dst_wells)].copy()
+        occupied = plate_384.loc[plate_384[PM_WELL_KEY].isin(dst_wells)].copy()
 
         if occupied.shape[0] > 0 and overwrite is False:
             raise ValueError(f'Quadrant {dst_quad} contains source samples')
@@ -614,25 +644,8 @@ class PlateReplication:
             # ids because the order of the subset returned is according to
             # their numeric index id, rather than the order passed through
             # .in().
-            # row will be a df that is just one row long.
-            row = plate_384.loc[plate_384['Well'] == src].copy()
-            # reset the numeric index, otherwise the row will keep the index
-            # from the old plate and row.loc[] will not modify the right row.
-            row.reset_index(inplace=True, drop=True)
-
-            if row.shape[0] > 1:
-                raise ValueError(f'{src} matched more than one row in '
-                                 'plate_map')
-
-            # assume row.shape[0] is either 0 (no-match) or 1 (exact match)
-            if row.shape[0] == 1:
-                row.loc[0, self.well_column_name] = dst
-                row.loc[0, 'original_sample_name'] = row.loc[0, 'Sample']
-                # add dst as suffix to sample_name for uniqueness
-                row.loc[0, 'Sample'] = str(row.loc[0, 'Sample']) + '.' + dst
-                row.loc[0, 'replicate'] = str(self.rep_counters[src_quad])
-                row.loc[0, 'contains_replicates'] = 'True'
-
+            row = self._make_replicate_row(plate_384, src_quad, src, dst)
+            if row is not None:
                 rows.append(row)
 
         self.status[dst_quad] = PlateReplication.STATUS_DESTINATION
@@ -647,40 +660,53 @@ class PlateReplication:
         rows = []
 
         for src in self._get_all_384_locations(src_quad):
-            row = plate_384.loc[plate_384['Well'] == src].copy()
-            # reset the numeric index, otherwise the row will keep the index
-            # from the old plate and row.loc[] will not modify the right row.
-            row.reset_index(inplace=True, drop=True)
-
-            if row.shape[0] > 1:
-                raise ValueError(f'{src} matched more than one row in '
-                                 'plate_map')
-
-            # assume row.shape[0] is either 0 (no-match) or 1 (exact match)
-            if row.shape[0] == 1:
-                row.loc[0, self.well_column_name] = src
-                row.loc[0, 'original_sample_name'] = row.loc[0, 'Sample']
-                # add dst as suffix to sample_name for uniqueness
-                row.loc[0, 'Sample'] = str(row.loc[0, 'Sample']) + '.' + src
-                # convert rep_counters to string so it doesn't become '1.0.'
-                row.loc[0, 'replicate'] = str(self.rep_counters[src_quad])
-                # contains_replicates is a document-wide boolean. It should
-                # be True even in the source row columns.
-                row.loc[0, 'contains_replicates'] = 'True'
+            row = self._make_replicate_row(plate_384, src_quad, src)
+            if row is not None:
                 rows.append(row)
 
         self.status[src_quad] = PlateReplication.STATUS_SOURCE
         self.data[src_quad] = pd.concat(rows, axis=0, ignore_index=True)
 
+    def _make_replicate_row(
+            self, plate_384, src_quad, src_well, dst_well=None):
+        row = plate_384.loc[plate_384['Well'] == src_well].copy()
+        # reset the numeric index, otherwise the row will keep the index
+        # from the old plate and row.loc[] will not modify the right row.
+        row.reset_index(inplace=True, drop=True)
+
+        if row.shape[0] > 1:
+            raise ValueError(f'{src_well} matched more than one row in '
+                             'plate_map')
+
+        # assume row.shape[0] is either 0 (no-match) or 1 (exact match)
+        if row.shape[0] == 1:
+            relevant_well = dst_well if dst_well is not None else src_well
+
+            row.loc[0, self.well_column_name] = relevant_well
+            row.loc[0, ORIG_NAME_KEY] = row.loc[0, PM_SAMPLE_KEY]
+            # add dst as suffix to sample_name for uniqueness
+            row.loc[0, PM_SAMPLE_KEY] = \
+                str(row.loc[0, PM_SAMPLE_KEY]) + '.' + relevant_well
+            # convert rep_counters to string so it doesn't become '1.0.'
+            row.loc[0, 'replicate'] = str(self.rep_counters[src_quad])
+            # contains_replicates is a document-wide boolean. It should
+            # be True even in the source row columns.
+            row.loc[0, CONTAINS_REPLICATES_KEY] = 'True'
+        elif row.shape[0] == 0:
+            row = None
+        # endif
+
+        return row
+
     def make_replicates(self, plate_384, replicates=None, overwrite=False):
-        '''
+        """
         Given a 384-well plate and replication orders, generate output.
         :param plate_384: A 384-well plate.
         :param replicates: A dict containing a source quadrant and a list of
         destinations e.g.: {1: [2, 3, 4]}
         :param overwrite: Allow overwriting of an occupied quadrant.
         :return:
-        '''
+        """
 
         # re-initialize object state for current call.
         self._reset()
@@ -690,8 +716,8 @@ class PlateReplication:
             # Useful for generating output even when no replications are
             # needed.
             result = plate_384.copy()
-            result[self.well_column_name] = result['Well'].copy()
-            result['contains_replicates'] = 'False'
+            result[self.well_column_name] = result[PM_WELL_KEY].copy()
+            result[CONTAINS_REPLICATES_KEY] = 'False'
             return result
 
         for key in replicates:
@@ -701,7 +727,8 @@ class PlateReplication:
 
         # discover which quads in plate_df contain samples, mark them as
         # source plates, and populate self.data for src_quad.
-        for src_quad in self._get_quadrants(list(plate_384['Well'].copy())):
+        for src_quad in self._get_quadrants(
+                list(plate_384[PM_WELL_KEY].copy())):
             self._populate_source(src_quad, plate_384)
 
         for src_quad in replicates.keys():
