@@ -41,7 +41,10 @@ PM_COMPRESSED_PLATE_NAME_KEY = "Compressed Plate Name"
 PM_WELL_KEY = 'Well'
 PM_LIB_WELL_KEY = 'Library Well'
 PM_BLANK_KEY = "Blank"
+PM_DILUTED_KEY = "Diluted"
 PLATE_NAME_DELIMITER = "_"
+PM_WELL_ID_96_KEY = "well_id_96"
+PM_WELL_ID_384_KEY = "well_id_384"
 
 # Currently used to describe sample context (only)
 SAMPLE_TYPE_KEY = "sample_type"
@@ -52,6 +55,7 @@ SYNDNA_POOL_NUM_KEY = "syndna_pool_number"
 SAMPLE_DNA_CONC_KEY = "Sample DNA Concentration"
 MINIPICO_LIB_CONC_KEY = 'MiniPico Library Concentration'
 NORMALIZED_DNA_VOL_KEY = "Normalized DNA volume"
+NORMALIZED_WATER_VOL_KEY = 'Normalized water volume'
 TELLSEQ_BARCODE_ID_KEY = "barcode_id"
 TELLSEQ_BARCODE_SET_ID_KEY = "barcode_set_id"
 SYNDNA_POOL_MASS_NG_KEY = "mass_syndna_input_ng"

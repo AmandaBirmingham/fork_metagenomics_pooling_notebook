@@ -11,7 +11,8 @@ from string import ascii_uppercase
 from metapool.mp_strings import EXPT_DESIGN_DESC_KEY, PM_PROJECT_NAME_KEY, \
     PM_PROJECT_PLATE_KEY, PM_PROJECT_ABBREV_KEY, PM_SAMPLE_KEY, \
     PM_WELL_KEY, PM_COMPRESSED_PLATE_NAME_KEY, SAMPLE_DNA_CONC_KEY, \
-    EXTRACTED_GDNA_CONC_KEY, ORIG_NAME_KEY, CONTAINS_REPLICATES_KEY
+    ORIG_NAME_KEY, CONTAINS_REPLICATES_KEY, \
+    PM_WELL_ID_96_KEY, PM_WELL_ID_384_KEY
 
 EXPECTED_COLUMNS = {
     'Plate Position', 'Plate map file', 'Plate elution volume',
@@ -287,8 +288,6 @@ def record_gdna_dilution(plate_df, diluted_mask, diluted_conc_key):
         warnings.warn('Dilution operation was already performed')
         return plate_df
 
-    plate_df[EXTRACTED_GDNA_CONC_KEY] = plate_df[SAMPLE_DNA_CONC_KEY].copy()
-
     # return a copy of the input data. Do not overwrite input data by default.
     df = plate_df.copy()
     df['Diluted'] = True
@@ -469,6 +468,51 @@ def demux_dataframe(combined_df):
         )
 
     return per_quadrant_dataframes
+
+
+def merge_plate_dfs(plate_df_one, plate_df_two, wells_col,
+                    plate_df_one_name, plate_df_two_name):
+    """
+    Merges the dilution plate dataframe with the plate dataframe
+
+    Parameters:
+    plate_df_one : pandas DataFrame
+        A DataFrame of plate info, containing at least the wells_col.  May or
+        may not contain rows for all wells in the plate.
+    plate_df_two : pandas DataFrame
+        A DataFrame of plate info, containing at least the wells_col.  May or
+        may not contain rows for all wells in the plate.
+    wells_col : str
+        The column indicating the well positions, for merging the DataFrames
+    plate_df_one_name : str
+        The name of the first DataFrame, used only in warning message
+    plate_df_two_name : str
+        The name of the second DataFrame, used only in warning message
+
+    Returns:
+    a_df : pandas DataFrame
+        A new dataframe that combines the contents of the two plate dataframes.
+    """
+
+    # warn if the wells in the two dataframes do not match;
+    # this isn't NECESSARILY an error, as in the case where the lab is
+    # prepping only half a plate, but it is worth noting
+    wells_one = set(plate_df_one[wells_col])
+    wells_two = set(plate_df_two[wells_col])
+    overlap_wells = wells_one.intersection(wells_two)
+    if wells_one != wells_two:
+        warn_msg = (
+            f"The two DataFrames do not have the same set of wells. "
+            f"DataFrame {plate_df_one_name} has {len(wells_one)} unique wells "
+            f"and DataFrame {plate_df_two_name} has {len(wells_two)} unique "
+            f"wells, with {len(overlap_wells)} shared unique wells. Only data "
+            f"for wells that are shared in both plates will be returned."
+        )
+
+        warnings.warn(warn_msg, UserWarning)
+    # end if merge col contents sets not the same
+
+    return pd.merge(plate_df_one, plate_df_two, on=wells_col)
 
 
 class PlateReplication:
@@ -750,4 +794,62 @@ class PlateReplication:
         result = pd.concat(quads, axis=0, ignore_index=True)
         result.reset_index(drop=True, inplace=True)
 
+        return result
+
+
+class PlateRemapper:
+    def __init__(self, a_df):
+        """ Initialize a PlateRemapper object
+
+        Parameters
+        ----------
+        a_df : pd.DataFrame
+            A pandas DataFrame containing
+            the mapping between 96-well plate name and position and
+            corresponding 384-well location. Must contain columns
+            PM_PROJECT_PLATE_KEY, PM_WELL_ID_96_KEY (96-well position), and
+            PM_WELL_ID_384_KEY (384-well position).  Note this can only handle
+            a *single* 384-well plate.
+        """
+
+        # if any of the columns PM_PROJECT_PLATE_KEY, PM_WELL_ID_96_KEY, or
+        # PM_WELL_ID_384_KEY are NOT in a_df, raise a ValueError saying which
+        # columns are missing
+        required_cols = \
+            [PM_PROJECT_PLATE_KEY, PM_WELL_ID_96_KEY, PM_WELL_ID_384_KEY]
+        missing_required_cols = set(required_cols) - set(a_df.columns)
+        if len(missing_required_cols) > 0:
+            raise ValueError(
+                f"Input dataframe lacks required columns: "
+                f"{missing_required_cols}")
+
+        self._df = a_df.copy()
+
+    def get_384_well_location(self, well_96_id, plate_name):
+        """ Translate 96-well location + a plate name into 384-well location
+
+        Parameters
+        ----------
+        well_96_id : str
+            A 96-well plate ID such as "A1", "H12", etc.
+        plate_name : str
+            The name of the plate to search in the dataframe, e.g. "Plate_16"
+
+        Returns
+        -------
+        str
+            The 384-well location corresponding to the 96-well location on
+            the specified plate according to the remapper's dataframe.
+        """
+
+        well_mask = (self._df[PM_PROJECT_PLATE_KEY] == plate_name) & \
+                    (self._df[PM_WELL_ID_96_KEY] == well_96_id)
+
+        if not well_mask.any():
+            raise ValueError(
+                f"{PM_WELL_ID_96_KEY} '{well_96_id}' not found in "
+                f"{PM_PROJECT_PLATE_KEY} '{plate_name}'")
+
+        # get a single value from the dataframe
+        result = self._df.loc[well_mask, PM_WELL_ID_384_KEY].values[0]
         return result

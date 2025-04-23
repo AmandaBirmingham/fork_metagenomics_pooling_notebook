@@ -4,8 +4,11 @@ import numpy as np
 import numpy.testing as npt
 import os
 from io import StringIO
+from pandas.testing import assert_frame_equal
+from metapool.plate import PlateRemapper
 from metapool.metapool import (read_plate_map_csv, read_pico_csv,
-                               calculate_norm_vol, format_dna_norm_picklist,
+                               calculate_norm_vol, add_vols_in_nl_to_plate_df,
+                               format_dna_norm_picklist,
                                format_index_picklist,
                                compute_qpcr_concentration,
                                compute_shotgun_pooling_values_eqvol,
@@ -28,8 +31,14 @@ from metapool.metapool import (read_plate_map_csv, read_pico_csv,
                                add_controls, compress_plates,
                                read_visionmate_file,
                                generate_override_cycles_value, TUBECODE_KEY,
-                               is_absquant)
-from metapool.mp_strings import SYNDNA_POOL_NUM_KEY
+                               is_absquant, add_undiluted_gdna_concs,
+                               _read_and_label_pico_csv, load_concentrations,
+                               select_sample_dilutions,
+                               add_pool_input_dna_mass_ng_to_plate_df,
+                               _assign_compressed_wells_for_96_well_plate)
+from metapool.mp_strings import SYNDNA_POOL_NUM_KEY, EXTRACTED_GDNA_CONC_KEY, \
+    PM_PROJECT_PLATE_KEY, PM_COMPRESSED_PLATE_NAME_KEY, SAMPLE_DNA_CONC_KEY, \
+    NORMALIZED_DNA_VOL_KEY, NORMALIZED_WATER_VOL_KEY
 from xml.etree.ElementTree import ParseError
 
 
@@ -104,6 +113,7 @@ class Tests(TestCase):
                                            dtype={TUBECODE_KEY: str})
         self.metadata = pd.read_csv(metadata_fp, sep='\t')
         self.fp = path
+        self.data_dir = os.path.join(path, 'data')
         self.plates = [p1, p2, p3, p4]
         self.runinfos = [("metapool/tests/data/runinfo_files/RunInfo1.xml",
                           "Y151;I8N4;Y151", 8),
@@ -318,6 +328,77 @@ class Tests(TestCase):
                                    dtype={TUBECODE_KEY: str}, sep='\t')
 
         pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)
+
+    def test_compress_plates_alt_layout_multiple_projects(self):
+        # this mimics the situation in which the lab wants to compress
+        # the input 96-well plates into a format other than the
+        # standard 4-plate-interleaved one.
+        # this can happen when, e.g., they have fewer than 4 plates and
+        # want to compress them into just one side of a 384-well plate.
+
+        # project name for *samples* now comes from sample accession rather
+        # than the compression dict, to allow for multiple projects on the same
+        # 96-well plate.  However, project name for *blanks* still comes from
+        # the compression dict, set to the "main" project of the 96-well plate.
+
+        compression = [
+            {'Plate Position': 1,  # as int
+             'Plate map file': self.plates[0],
+             'Project Plate': 'Plate_16',
+             'Project Name': 'Celeste_Adaptation_12986',
+             'Project Abbreviation': 'ADAPT',
+             'Plate elution volume': 70},
+            {'Plate Position': 2,
+             'Plate map file': self.plates[3],
+             'Project Plate': 'Plate_42',
+             'Project Name': 'TMI_10317',
+             'Project Abbreviation': 'TMI',
+             'Plate elution volume': 70}
+        ]
+
+        arbitrary_remapping_df = pd.read_csv(
+            os.path.join(self.data_dir, "arbitrary_remapping.csv"))
+
+        plate_df_obs = compress_plates(
+            compression, self.sa_augmented_df, well_col='Well',
+            arbitrary_mapping_df=arbitrary_remapping_df)
+        plate_df_exp = pd.read_csv(
+            os.path.join(self.data_dir,
+                         "compress_plates_arbitrary_remapping_multiple_"
+                         "projects_on_one_plate_expected_out.tsv"),
+            dtype={TUBECODE_KEY: str}, sep='\t')
+
+        pd.testing.assert_frame_equal(plate_df_obs, plate_df_exp)
+
+    def test__assign_compressed_wells_for_96_well_plate(self):
+        # this sets up plate map input
+        plate_map_df = pd.read_csv(self.plates[3], sep='\t')
+
+        # this sets up mapper input, changing plate name to match what is
+        # in the test data being reused below
+        arbitrary_remapping_df = pd.read_csv(
+            os.path.join(self.data_dir, "arbitrary_remapping.csv"))
+        arbitrary_remapping_df.loc[
+            arbitrary_remapping_df[PM_PROJECT_PLATE_KEY] == 'Plate_42',
+            PM_PROJECT_PLATE_KEY
+        ] = "plate_4"
+        remapper = PlateRemapper(arbitrary_remapping_df)
+
+        # this constructs expected output by munging other test data
+        compress_df_exp = pd.read_csv(
+            os.path.join(self.data_dir,
+                         "compress_plates_arbitrary_remapping_multiple_"
+                         "projects_on_one_plate_expected_out.tsv"),
+            dtype={TUBECODE_KEY: str}, sep='\t')
+        plate_df_exp = plate_map_df.copy()
+        plate_df_exp["Well"] = compress_df_exp.loc[
+            compress_df_exp["RackID"] == 'plate_4', "Well"].reset_index(
+            drop=True)
+
+        plate_df_obs = _assign_compressed_wells_for_96_well_plate(
+            plate_map_df, remapper, "plate_4", "LocationCell", "Well")
+
+        pd.testing.assert_frame_equal(plate_df_exp, plate_df_obs)
 
     def test_add_controls_preserve_leading_zeroes(self):
         plate_df = pd.read_csv(
@@ -623,6 +704,156 @@ class Tests(TestCase):
 
         self.assertEqual(any(check_for_neg[conc_col_name] < 0), True)
 
+    def test___read_and_label_pico_csv(self):
+        """Test that pico values are read into a DataFrame and labeled
+
+        Note: not testing all the possible plate readers as those are tested
+        in the read_pico_csv function tests."""
+
+        # Test a normal sheet
+        pico_csv = '''Results
+
+        Well ID\tWell\t[Blanked-RFU]\t[Concentration]
+        SPL1\tA1\t5243.000\t3.432
+        SPL2\tA2\t4949.000\t3.239
+        SPL3\tB1\t15302.000\t10.016
+        SPL4\tB2\t4039.000\t2.644
+
+        Curve2 Fitting Results
+
+        Curve Name\tCurve Formula\tA\tB\tR2\tFit F Prob
+        Curve2\tY=A*X+B\t1.53E+003\t0\t0.995\t?????
+        '''
+        exp_pico_df = pd.DataFrame({'Well': ['A1', 'A2', 'B1', 'B2'],
+                                    'Sample DNA Concentration_some_dilution':
+                                    [3.432, 3.239, 10.016, 2.644]})
+        pico_csv_f = StringIO(pico_csv)
+
+        obs_pico_df = _read_and_label_pico_csv(
+            pico_csv_f, "some_dilution",
+            plate_reader='Synergy_HT')
+
+        pd.testing.assert_frame_equal(exp_pico_df, obs_pico_df)
+
+    def test_load_concentrations(self):
+        """Test multiple concentration files are loaded, merged, and labeled"""
+
+        pico_csv_1 = '''Results
+
+        Well ID\tWell\t[Blanked-RFU]\t[Concentration]
+        SPL1\tA1\t5243.000\t13.432
+        SPL2\tA2\t4949.000\t13.239
+        SPL3\tB1\t15302.000\t110.016
+        SPL4\tB2\t4039.000\t20.644
+
+        Curve2 Fitting Results
+
+        Curve Name\tCurve Formula\tA\tB\tR2\tFit F Prob
+        Curve2\tY=A*X+B\t1.53E+003\t0\t0.995\t?????
+        '''
+
+        pico_csv_2 = '''Results
+
+        Well ID\tWell\t[Blanked-RFU]\t[Concentration]
+        SPL1\tA1\t5243.000\t3.432
+        SPL2\tA2\t4949.000\t3.239
+        SPL3\tB1\t15302.000\t10.016
+        SPL4\tB2\t4039.000\t2.644
+
+        Curve2 Fitting Results
+
+        Curve Name\tCurve Formula\tA\tB\tR2\tFit F Prob
+        Curve2\tY=A*X+B\t1.53E+003\t0\t0.995\t?????
+        '''
+
+        pico_csv_3 = '''Results
+
+        Well ID\tWell\t[Blanked-RFU]\t[Concentration]
+        SPL1\tA1\t5243.000\t0.3432
+        SPL2\tA2\t4949.000\t0.3239
+        SPL3\tB1\t15302.000\t1.0016
+        SPL4\tB2\t4039.000\t0.2644
+
+        Curve2 Fitting Results
+
+        Curve Name\tCurve Formula\tA\tB\tR2\tFit F Prob
+        Curve2\tY=A*X+B\t1.53E+003\t0\t0.995\t?????
+        '''
+
+        conc_dict = {"most_dilute": StringIO(pico_csv_3),
+                     "not_dilute": StringIO(pico_csv_1),
+                     "a_bit_dilute": StringIO(pico_csv_2)}
+
+        input_df = pd.DataFrame({'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+                                 'Well': ['A1', 'A2', 'B1', 'B2']})
+
+        exp_pico_df = pd.DataFrame({
+            'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+            'Well': ['A1', 'A2', 'B1', 'B2'],
+            'Sample DNA Concentration_most_dilute':
+                [0.3432, 0.3239, 1.0016, 0.2644],
+            'Sample DNA Concentration_not_dilute':
+                [13.432, 13.239, 110.016, 20.644],
+            'Sample DNA Concentration_a_bit_dilute':
+                [3.432, 3.239, 10.016, 2.644]})
+
+        obs_pico_df = load_concentrations(input_df, conc_dict,
+                                          plate_reader='Synergy_HT')
+
+        pd.testing.assert_frame_equal(exp_pico_df, obs_pico_df)
+
+    def test_select_sample_dilutions_w_name_func(self):
+        """Test that correct dilution is selected if a name_func is provided"""
+        input_df = pd.DataFrame({
+            'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+            'Well': ['A1', 'A2', 'B1', 'B2'],
+            'gDNA_most_dilute':
+                [0.3432, 0.3239, 1.0016, 0.2644],
+            'gDNA_not_dilute':
+                [13.432, 13.239, 110.016, 20.644],
+            'gDNA_a_bit_dilute':
+                [3.432, 3.239, 10.016, 0.644],
+            PM_PROJECT_PLATE_KEY:
+                ['Plate_1', 'Plate_2', 'Plate_3', 'Plate_8'],
+            PM_COMPRESSED_PLATE_NAME_KEY:
+                ['Plate_1_2_3_4', 'Plate_1_2_3_4',
+                 'Plate_1_2_3_4', 'Plate_5_6_7_8']})
+
+        conc_list = ['most_dilute', 'a_bit_dilute', 'not_dilute']
+
+        def name_func(suffix):
+            return f"gDNA_{suffix}"
+
+        def mask_func(plate_df, conc_key):
+            return plate_df[conc_key] > 1
+
+        exp_pico_df = pd.DataFrame({
+            'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+            'Well': ['A1', 'A2', 'B1', 'B2'],
+            'gDNA_most_dilute':
+                [0.3432, 0.3239, 1.0016, 0.2644],
+            'gDNA_not_dilute':
+                [13.432, 13.239, 110.016, 20.644],
+            'gDNA_a_bit_dilute':
+                [3.432, 3.239, 10.016, 0.644],
+            PM_PROJECT_PLATE_KEY:
+                ['Plate_1_a_bit_dilute', 'Plate_2_a_bit_dilute',
+                 'Plate_3_most_dilute', 'Plate_8_not_dilute'],
+            PM_COMPRESSED_PLATE_NAME_KEY:
+                ['Plate_1_2_3_4_a_bit_dilute', 'Plate_1_2_3_4_a_bit_dilute',
+                 'Plate_1_2_3_4_most_dilute', 'Plate_5_6_7_8_not_dilute'],
+            'Sample DNA Concentration':
+                [3.432, 3.239, 1.0016, 20.644],
+            'Diluted':
+                [True, True, True, False]})
+        # this gets built in the function as an object type
+        exp_pico_df['Diluted'] = exp_pico_df['Diluted'].astype(object)
+
+        obs_pico_df = select_sample_dilutions(
+            input_df, conc_list, mask_func, name_func)
+
+        pd.testing.assert_frame_equal(exp_pico_df, obs_pico_df)
+
     def test_calculate_norm_vol(self):
         dna_concs = np.array([[2, 7.89],
                               [np.nan, .0]])
@@ -633,6 +864,24 @@ class Tests(TestCase):
         obs_vols = calculate_norm_vol(dna_concs)
 
         np.testing.assert_allclose(exp_vols, obs_vols)
+
+    def test_add_vols_in_nl_to_plate_df(self):
+        """ Test that function adds correct columns in place to the input df"""
+        working_df = pd.DataFrame({
+            'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+            SAMPLE_DNA_CONC_KEY: [2, 7.89, np.nan, .0]})
+
+        add_vols_in_nl_to_plate_df(
+            working_df, target_mass_ng=5, min_vol_in_nl=2.5,
+            max_vol_in_nl=3500, instrument_resolution_in_nl=2.5)
+
+        exp_df = pd.DataFrame({
+            'sample_name': ["Abe", "Bob", "Cat", "Dan"],
+            SAMPLE_DNA_CONC_KEY: [2, 7.89, np.nan, .0],
+            NORMALIZED_DNA_VOL_KEY: [2500., 632.5, 3500., 3500.],
+            NORMALIZED_WATER_VOL_KEY: [1000, 2867.5, 0., .0]})
+
+        pd.testing.assert_frame_equal(exp_df, working_df)
 
     def test_format_dna_norm_picklist(self):
 
@@ -1459,6 +1708,63 @@ class Tests(TestCase):
 
         self.assertEqual(obs, exp)
 
+    def test_add_undiluted_gdna_concs(self):
+        input_pico_fp = os.path.join(os.path.dirname(__file__), 'data',
+                                     'pico_spectramax.txt')
+
+        # doesn't really matter what columns are in here other than Well;
+        # just have some more here to prove they aren't affected
+        input_plate_df = pd.DataFrame(
+            {'Sample': ['sample_1', 'sample_2', 'sample_3', 'sample_4'],
+             'Well': ['A1', 'B1', 'A2', 'B2'],
+             'Sample DNA Concentration': [20, 10, 5, 1],
+             'Normalized DNA volume': [250.0, 500.0, 1000.0, 3500.0],
+             'Normalized water volume': [3250.0, 3000.0, 2500.0, 0.0],
+             'Diluted': [False, False, False, False],
+             'syndna_pool_number': [None, None, None, None]
+             })
+
+        exp_plate_df = input_plate_df.copy()
+        # Note different well order between input_plate_df and input_pico_csv
+        # to show that we are doing a merge, not just a concat
+        exp_plate_df[EXTRACTED_GDNA_CONC_KEY] = [0.0, 15.924, 41.053, 4.745]
+
+        obs_plate_df = add_undiluted_gdna_concs(
+            input_plate_df, input_pico_fp)
+        assert_frame_equal(exp_plate_df, obs_plate_df)
+
+    def test_add_pool_input_dna_mass_ng_to_plate_df(self):
+        """ Test function adds correct Input DNA column in place to input df"""
+
+        # construct an example DataFrame
+        test_df = pd.DataFrame({'Sample': ['sample_1', 'sample_2',
+                                           'sample_3', 'sample_4',
+                                           'sample5'],
+                                'Sample DNA Concentration': [20, 10, 5, 1,
+                                                             0.5],
+                                'Normalized DNA volume': [250.0, 500.0,
+                                                          1000.0, 3500.0,
+                                                          3500.0],
+                                'Ignored column': [50.0, 0.0, 20.0, 0.0, 0.0]
+                                })
+
+        # expected results
+        exp_plate_df = pd.DataFrame({'Sample': ['sample_1', 'sample_2',
+                                                'sample_3', 'sample_4',
+                                                'sample5'],
+                                     'Sample DNA Concentration': [20, 10, 5, 1,
+                                                                  0.5],
+                                     'Normalized DNA volume': [250.0, 500.0,
+                                                               1000.0, 3500.0,
+                                                               3500.0],
+                                     'Ignored column':
+                                         [50.0, 0.0, 20.0, 0.0, 0.0],
+                                     'Input DNA': [5.0, 5.0, 5.0, 3.50, 1.75]
+                                     })
+
+        add_pool_input_dna_mass_ng_to_plate_df(test_df)
+        pd.testing.assert_frame_equal(exp_plate_df, test_df)
+
     def test_add_syndna_no_spikein(self):
         # tests running the add_syndna() function
         # with default arguments, which should just
@@ -1512,13 +1818,7 @@ class Tests(TestCase):
                                            'sample_3', 'sample_4',
                                            'sample5'],
                                 'Well': ['A1', 'B1', 'C1', 'D1', 'E1'],
-                                'Sample DNA Concentration': [20, 10, 5, 1,
-                                                             0.5],
-                                'Normalized DNA volume': [250.0, 500.0,
-                                                          1000.0, 3500.0,
-                                                          3500.0],
-                                'Normalized water volume': [3250.0, 3000.0,
-                                                            2500.0, 0.0, 0.0],
+                                'Input DNA': [5.0, 5.0, 5.0, 3.50, 1.75],
                                 'Diluted': [False, False, False, False, False]
                                 })
 
@@ -1529,15 +1829,6 @@ class Tests(TestCase):
                                                 'sample_3', 'sample_4',
                                                 'sample5'],
                                      'Well': ['A1', 'B1', 'C1', 'D1', 'E1'],
-                                     'Sample DNA Concentration': [20, 10, 5, 1,
-                                                                  0.5],
-                                     'Normalized DNA volume': [250.0, 500.0,
-                                                               1000.0, 3500.0,
-                                                               3500.0],
-                                     'Normalized water volume': [3250.0,
-                                                                 3000.0,
-                                                                 2500.0,
-                                                                 0.0, 0.0],
                                      'Diluted': [False, False, False, False,
                                                  False],
                                      'syndna_pool_number': ['pool1', 'pool1',
@@ -1555,9 +1846,27 @@ class Tests(TestCase):
                                       check_like=True,
                                       rtol=1e-3)
 
-    def test_add_syndna_pool1_noconcentration_exc(self):
+    def test_add_syndna_pool1_err_noconcentration(self):
         # testing a raised exception when user forgets to input
         # synDNA pool concentration
+
+        # construct an example DataFrame
+        test_df = pd.DataFrame({'Sample': ['sample_1', 'sample_2',
+                                           'sample_3', 'sample_4',
+                                           'sample5'],
+                                'Well': ['A1', 'B1', 'C1', 'D1', 'E1'],
+                                'Input DNA': [5.0, 5.0, 5.0, 3.50, 1.75],
+                                'Diluted': [False, False, False, False, False]
+                                })
+
+        partial_err_msg = "Specify the concentration of the synDNA"
+        with self.assertRaisesRegex(Exception, partial_err_msg):
+            add_syndna(test_df, syndna_pool_number='pool1',
+                       syndna_concentration=None)
+
+    def test_add_syndna_pool1_err_no_input_dna(self):
+        # testing a raised exception when user forgets to provide
+        # Input DNA column
 
         # construct an example DataFrame
         test_df = pd.DataFrame({'Sample': ['sample_1', 'sample_2',
@@ -1574,9 +1883,11 @@ class Tests(TestCase):
                                 'Diluted': [False, False, False, False, False]
                                 })
 
-        with self.assertRaises(Exception):
+        partial_err_msg = \
+            r"The plate dataframe \(plate_df\) must have Input DNA"
+        with self.assertRaisesRegex(Exception, partial_err_msg):
             add_syndna(test_df, syndna_pool_number='pool1',
-                       syndna_concentration=None)
+                       syndna_concentration=2.22)
 
     def test_generate_override_cycles_value(self):
         for fp, exp, adapter_length in self.runinfos:
