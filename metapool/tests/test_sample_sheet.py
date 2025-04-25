@@ -78,7 +78,7 @@ class BaseTests(unittest.TestCase):
         self.bad_project_name_ss = join(data_dir,
                                         'bad-project-name-sample-sheet.csv')
 
-        self.good_run_info = "metapool/tests/data/runinfo_files/RunInfo1.xml"
+        self.good_run_info = join(data_dir, "runinfo_files/RunInfo1.xml")
 
         bfx = [
             {
