@@ -1993,9 +1993,20 @@ def _get_contains_replicates_value(sheet):
         raise ValueError(f"All projects in {_BIOINFORMATICS_KEY} section "
                          f"must either contain replicates or not.")
 
-    # return either True or False, depending on the values found in
-    # Bioinformatics section.
-    return list(contains_replicates)[0]
+    raw_val = list(contains_replicates)[0]
+    # if raw_val is a string, it is likely a 'True' or 'False' string.
+    # convert it to a boolean value.
+    if isinstance(raw_val, str):
+        if raw_val.lower() == 'true':
+            bool_val = True
+        elif raw_val.lower() == 'false':
+            bool_val = False
+        else:
+            raise ValueError(f"'{raw_val}' is not a valid boolean value")
+    else:
+        bool_val = raw_val
+
+    return bool_val
 
 
 def _demux_sample_sheet(sheet):
@@ -2030,7 +2041,9 @@ def demux_sample_sheet(sheet):
         list of sheets
     """
     if CONTAINS_REPLICATES_KEY not in sheet.Bioinformatics:
-        raise ValueError("sample-sheet does not contain replicates")
+        raise ValueError(
+            f"sample sheet does not have a '{CONTAINS_REPLICATES_KEY}' "
+            f"column in the '{_BIOINFORMATICS_KEY}' section.")
 
     contains_repl_value = _get_contains_replicates_value(sheet)
 
