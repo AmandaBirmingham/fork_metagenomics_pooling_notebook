@@ -441,7 +441,7 @@ def _autopool_norm(pool_failures, total_nmol, min_conc, sample_concs,
     return plate_df
 
 
-def demux_dataframe(combined_df):
+def demux_dataframe(combined_df, well_id_384_col):
     quad_col = "quad"
     per_quadrant_dataframes = []
 
@@ -453,7 +453,7 @@ def demux_dataframe(combined_df):
 
     combined_df[quad_col] = combined_df.apply(
         lambda row: plate.get_96_well_location_and_quadrant(
-            row.well_id_384)[0],
+            row[well_id_384_col])[0],
         axis=1)
 
     for quad in sorted(combined_df[quad_col].unique()):

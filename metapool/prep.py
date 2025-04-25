@@ -1,7 +1,8 @@
 from collections import Counter, defaultdict
 from datetime import datetime
 from glob import glob
-from metapool.mp_strings import get_short_name_and_id
+from metapool.mp_strings import get_short_name_and_id, \
+    PM_WELL_ID_384_KEY
 from metapool.plate import demux_dataframe
 from os import sep, listdir
 from os.path import (basename, isdir, join, split, abspath, exists,
@@ -891,7 +892,7 @@ def demux_pre_prep(pre_prep):
     if not pre_prep_needs_demuxing(pre_prep):
         raise ValueError("pre_prep does not need to be demultiplexed")
 
-    res = demux_dataframe(pre_prep)
+    res = demux_dataframe(pre_prep, PM_WELL_ID_384_KEY)
     return res
 
 

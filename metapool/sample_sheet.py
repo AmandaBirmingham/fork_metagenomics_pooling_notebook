@@ -13,7 +13,8 @@ from metapool.mp_strings import parse_project_name, \
     CONTAINS_REPLICATES_KEY, ORIG_NAME_KEY, EXPT_DESIGN_DESC_KEY, \
     PM_PROJECT_NAME_KEY, PM_PROJECT_PLATE_KEY, PM_BLANK_KEY, QIITA_ID_KEY, \
     PROJECT_FULL_NAME_KEY, TUBECODE_KEY, SYNDNA_POOL_MASS_NG_KEY, \
-    SYNDNA_POOL_NUM_KEY, ELUTION_VOL_KEY, EXTRACTED_GDNA_CONC_KEY
+    SYNDNA_POOL_NUM_KEY, ELUTION_VOL_KEY, EXTRACTED_GDNA_CONC_KEY, \
+    PM_DESTINATION_WELL_384_KEY
 from metapool.metapool import (bcl_scrub_name, sequencer_i5_index,
                                REVCOMP_SEQUENCERS)
 from metapool.plate import ErrorMessage, WarningMessage, demux_dataframe
@@ -2011,7 +2012,7 @@ def _demux_sample_sheet(sheet):
 
     df = df.drop(columns=['library_construction_protocol',
                           EXPT_DESIGN_DESC_KEY])
-    res = demux_dataframe(df)
+    res = demux_dataframe(df, PM_DESTINATION_WELL_384_KEY)
     return res
 
 
