@@ -1989,7 +1989,8 @@ class DemuxReplicatesTests(BaseTests):
         self.sheet_wo_replicates_path = join(self.data_dir,
                                              'sheet_wo_replicates.csv')
 
-        self.legacy_sheet_path = join(self.data_dir, 'good-sample-sheet.csv')
+        self.legacy_sheet_path = join(
+            self.data_dir, 'good-legacy-sample-sheet.csv')
 
         self.replicate_output_paths = [join(self.data_dir,
                                             'replicate_output1.csv'),
@@ -2022,15 +2023,17 @@ class DemuxReplicatesTests(BaseTests):
         sheet = MetagenomicSampleSheetv100(self.sheet_wo_replicates_path)
         self.assertFalse(sheet_needs_demuxing(sheet))
 
-    def test_demux_sample_sheet(self):
+    def test_demux_sample_sheet_err_legacy(self):
         # we don't want to demux legacy sample-sheets. sheet_needs_demuxing()
         # should be used to determine if demux_sample_sheet() should be
         # called.
-        with self.assertRaisesRegex(ValueError, "sample-sheet does not contain"
-                                                " replicates"):
+        err_msg = ("sample sheet does not have a 'contains_replicates' "
+                   "column in the 'Bioinformatics' section.")
+        with self.assertRaisesRegex(ValueError, err_msg):
             sheet = MetagenomicSampleSheetv90(self.legacy_sheet_path)
             demux_sample_sheet(sheet)
 
+    def test_demux_sample_sheet_err_inconsistent(self):
         # by convention, all replication is done at the plate level, and all
         # projects in a sample-sheet will either contain replicates, or all of
         # them will not. Hence, a sample-sheet with both True and False in
@@ -2042,6 +2045,7 @@ class DemuxReplicatesTests(BaseTests):
             sheet = MetagenomicSampleSheetv100(self.bad_sht_w_replicates_path)
             demux_sample_sheet(sheet)
 
+    def test_demux_sample_sheet_err_no_demuxing_needed(self):
         # as mentioned above, sheet_needs_demuxing() should be used to
         # determine if demux_sample_sheet() should be called. If a sample
         # sheet is passed to demux_sample_sheet() and all projects are False,
@@ -2053,6 +2057,7 @@ class DemuxReplicatesTests(BaseTests):
             sheet = MetagenomicSampleSheetv100(self.sheet_wo_replicates_path)
             demux_sample_sheet(sheet)
 
+    def test_demux_sample_sheet(self):
         # this test will need to compare the four completed sample-sheets
         # made using self.sheet_w_replicates_path against an expected result.
 
