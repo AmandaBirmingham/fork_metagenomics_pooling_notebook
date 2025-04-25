@@ -2693,7 +2693,7 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
 
         self.test_sheet.SampleContext = pd.DataFrame()
 
-    def test_katharoseq_enabled_sheet_load(self):
+    def test_katharoseq_enabled_sheet_load_wo_kath_samples(self):
         # load metagenomic sample-sheet w/out katharoseq samples in the [Data]
         # section, and get a list of the columns.
         sheet1 = load_sample_sheet(self.katharoseq_1)
@@ -2710,6 +2710,7 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         self.assertEqual(obs, exp)
         self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
 
+    def test_katharoseq_enabled_sheet_load_w_kath_samples(self):
         # load metagenomic sample-sheet w/katharoseq samples in the [Data]
         # section, and perform similar tests.
         sheet2 = load_sample_sheet(self.katharoseq_2)
@@ -2723,11 +2724,16 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         obs = sheet2._get_expected_data_columns()
 
         self.assertEqual(obs, exp)
-        self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
+        self.assertTrue(sheet2.validate_and_scrub_sample_sheet())
 
+    def test_katharoseq_enabled_sheet_load_no_state_change(self):
         # confirm that class-wide state is not permanently changed by loading
-        # a karathoseq-enabled file. Reloading sheet1 should continue to have
-        # only the shorter set of columns.
+        # a karathoseq-enabled file. Loading sheet1 (no katharoseq columns)
+        # after sheet2 (containing katharoseq columns) should yield a sheet1
+        # samplesheet with only the shorter set of columns.
+        sheet2 = load_sample_sheet(self.katharoseq_2)
+        self.assertEqual(type(sheet2), MetagenomicSampleSheetv102)
+
         sheet1 = load_sample_sheet(self.katharoseq_1)
         self.assertEqual(type(sheet1), MetagenomicSampleSheetv102)
         exp = ('Sample_ID', 'Sample_Name', 'Sample_Plate', 'well_id_384',
@@ -2738,6 +2744,7 @@ class KarathoseqEnabledSheetCreationTests(BaseTests):
         self.assertEqual(obs, exp)
         self.assertTrue(sheet1.validate_and_scrub_sample_sheet())
 
+    def test_katharoseq_enabled_sheet_load_err_missing_col(self):
         sheet = load_sample_sheet(self.katharoseq_3)
         obs = sheet.quiet_validate_and_scrub_sample_sheet()
         self.assertEqual(str(obs[0]), "ErrorMessage: The number_of_cells "
