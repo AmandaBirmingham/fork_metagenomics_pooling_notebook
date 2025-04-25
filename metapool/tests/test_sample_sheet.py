@@ -338,14 +338,14 @@ class KLSampleSheetTests(BaseTests):
             columns=['Sample_Project', 'QiitaID', 'BarcodesAreRC',
                      'ForwardAdapter', 'ReverseAdapter', 'HumanFiltering',
                      'library_construction_protocol',
-                     'experiment_design_description'],
+                     'experiment_design_description', 'contains_replicates'],
             data=[
                 ['NYU_BMS_Melanoma_13059', '13059', False, 'AACC', 'GGTT',
-                 False, 'Knight Lab Kapa HP', 'Eqiiperiment'],
+                 False, 'Knight Lab Kapa HP', 'Eqiiperiment', False],
                 ['Feist_11661', '11661', False, 'AACC', 'GGTT', False,
-                 'Knight Lab Kapa HP', 'Eqiiperiment'],
+                 'Knight Lab Kapa HP', 'Eqiiperiment', False],
                 ['Gerwick_6123', '6123', False, 'AACC', 'GGTT', False,
-                 'Knight Lab Kapa HP', 'Eqiiperiment']
+                 'Knight Lab Kapa HP', 'Eqiiperiment', False]
             ]
         )
 
